@@ -1,0 +1,14 @@
+{
+    "servers": [
+        {
+            "id": "filesystem",
+            "name": "File System",
+            "command": "python",
+            "args": [
+                "-m",
+                "mcp_server_filesystem"
+            ],
+            "enabled": true
+        }
+    ]
+}

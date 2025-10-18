@@ -1,0 +1,21 @@
+{
+    "active_provider": "gemini",
+    "active_model": "gemini-1.5-flash",
+    "providers": {
+        "gemini": {
+            "api_key": "",
+            "models": [
+                "gemini-1.5-flash",
+                "gemini-1.5-pro"
+            ]
+        },
+        "ollama": {
+            "base_url": "http://localhost:11434",
+            "models": []
+        },
+        "openrouter": {
+            "api_key": "",
+            "models": []
+        }
+    }
+}

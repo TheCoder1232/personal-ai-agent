@@ -1,0 +1,11 @@
+{
+    "theme": "system",
+    "popup": {
+        "x": 100,
+        "y": 100,
+        "width": 400,
+        "height": 600
+    },
+    "minimize_to_tray": true,
+    "markdown_rendering": true
+}

@@ -1,0 +1,14 @@
+{
+    "hotkeys": {
+        "open_chat": "<ctrl>+<shift>+<space>",
+        "screen_capture": "<ctrl>+<shift>+x"
+    },
+    "logging": {
+        "level": "INFO",
+        "save_conversations": false
+    },
+    "context": {
+        "max_messages": 50,
+        "summarize_threshold": 20
+    }
+}
