@@ -8,8 +8,14 @@ from pathlib import Path
 from typing import Optional
 
 from core.service_locator import locator, ServiceLocator
+from core.command_executor import CommandExecutor
 from core.event_dispatcher import EventDispatcher
 from core.plugin_manager import PluginManager
+from core.api_manager import ApiManager
+from core.context_manager import ContextManager
+from core.role_selector import RoleSelector
+from core.agent import Agent
+
 from utils.config_loader import ConfigLoader
 from utils.logger import setup_logging
 
@@ -155,7 +161,23 @@ def register_core_services(locator_instance: ServiceLocator):
     
     # Register PluginManager as a singleton.
     locator_instance.register("plugin_manager", lambda: PluginManager(locator_instance), singleton=True)
+    
+    # --- NEW FOR PHASE 3 ---
+    
+    # Register ApiManager
+    locator_instance.register("api_manager",  lambda: ApiManager(locator_instance), singleton=True)
+    
+    # Register ContextManager
+    locator_instance.register("context_manager", lambda: ContextManager(locator_instance), singleton=True)
+    
+    # Register RoleSelector
+    locator_instance.register("role_selector", lambda: RoleSelector(locator_instance), singleton=True)
+    
+    # Register the Agent (which depends on the above)
+    locator_instance.register("agent", lambda: Agent(locator_instance), singleton=True)
 
+    # --- NEW FOR PHASE 4 ---
+    locator_instance.register("command_executor", lambda: CommandExecutor(locator_instance), singleton=True)
 
 if __name__ == "__main__":
     # 1. Register synchronous services first
@@ -166,6 +188,11 @@ if __name__ == "__main__":
     config_loader.load_all_configs()
     setup_logging(config_loader)
     
+    # --- NEW: Apply theme from config ---
+    theme = config_loader.get("ui_config.json", "theme", "System")
+    ctk.set_appearance_mode(theme.lower())
+    # --- END NEW ---
+
     # 3. Create the main application instance
     app = PersonalAIAgentApp(locator)
     

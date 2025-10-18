@@ -1,5 +1,5 @@
 {
-    "theme": "system",
+    "theme": "Light",
     "popup": {
         "x": 100,
         "y": 100,
@@ -7,5 +7,11 @@
         "height": 600
     },
     "minimize_to_tray": true,
-    "markdown_rendering": true
+    "markdown_rendering": true,
+    "settings_window": {
+        "geometry": "600x480+657+178"
+    },
+    "popup_window": {
+        "geometry": "400x600+32+32"
+    }
 }

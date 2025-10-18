@@ -6,8 +6,16 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "customtkinter>=5.2.2",
+    "google-api-core>=2.26.0",
+    "google-genai>=1.45.0",
+    "litellm>=1.78.4",
+    "markdown>=3.9",
+    "mcp[cli]>=1.18.0",
+    "mss>=10.1.0",
     "pillow>=10.4.0",
     "pynput>=1.8.1",
     "pystray>=0.19.5",
+    "requests>=2.32.5",
+    "tenacity>=9.1.2",
     "tkhtmlview>=0.3.1",
 ]

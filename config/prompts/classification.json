@@ -1,0 +1,3 @@
+{
+  "classification_prompt": "Given a user query, classify its intent into one of the following roles: {{ROLES_LIST}}. Respond with only the role ID, e.g., 'coding'.\n\nUser Query: '{{USER_QUERY}}'\n\nClassification:"
+}
