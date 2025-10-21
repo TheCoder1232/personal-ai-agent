@@ -107,29 +107,45 @@ class ApiManager:
                 error_message += "Failed to connect to model."
             yield error_message
 
-    async def on_test_connection(self, provider: str):
+    async def on_test_connection(self, provider: str, **kwargs):
         """Event handler for testing an API connection."""
         self.logger.info(f"Received test connection request for {provider}")
         
         # We need a representative model for the provider
-        models_config = self.config.get("models_config.json", "providers", {}).get(provider, {})
-        test_model = models_config.get("models", [None])[0]
+        # models_config = self.config.get("models_config.json", "providers", {}).get(provider, {})
+        test_model = kwargs.get("model")
+        api_key = kwargs.get("value")
         
         if not test_model:
             self.logger.error(f"No test model found for provider: {provider}")
-            await self.events.publish("NOTIFICATION_EVENT.ERROR", title=f"{provider} Test", message="No model configured for this provider.")
+            await self.events.publish(
+                "NOTIFICATION_EVENT.ERROR", 
+                title=f"{provider} Test", 
+                message="No model configured for this provider."
+            )
+            # --- NEW: Also publish the failure result ---
+            await self.events.publish(
+                "API_EVENT.TEST_CONNECTION_RESULT", 
+                provider=provider, 
+                success=False
+            )
             return
 
+        # --- NEW: Default success to False ---
+        success = False 
         try:
             # Run the synchronous test call in an async thread
             await asyncio.to_thread(
                 litellm.completion,
                 model=test_model,
                 messages=[{"role": "user", "content": "Test"}],
-                max_tokens=10
+                max_tokens=10,
+                api_key=api_key
             )
             
             # If it doesn't throw an exception, it worked
+            # --- NEW: Set success flag to True ---
+            success = True
             self.logger.info(f"LiteLLM connection test successful for: {test_model}")
             await self.events.publish(
                 "NOTIFICATION_EVENT.INFO",
@@ -171,4 +187,14 @@ class ApiManager:
                 "NOTIFICATION_EVENT.ERROR",
                 title=f"{provider.title()} Test",
                 message=f"An unexpected error occurred. Error: {str(e)[:100]}..."
+            )
+        
+        # --- NEW: This block will run *after* the try/except ---
+        finally:
+            # Publish the final result (True or False) back to the SettingsWindow
+            self.logger.debug(f"Publishing test result for {provider}: {success}")
+            await self.events.publish(
+                "API_EVENT.TEST_CONNECTION_RESULT", 
+                provider=provider, 
+                success=success
             )
