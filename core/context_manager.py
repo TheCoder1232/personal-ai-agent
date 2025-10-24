@@ -1,7 +1,8 @@
 # file: core/context_manager.py
 
 import logging
-from typing import List, Dict, Tuple
+# --- NEW: Import 'Any' ---
+from typing import List, Dict, Tuple, Any 
 from core.service_locator import locator
 from utils.config_loader import ConfigLoader
 
@@ -15,7 +16,8 @@ class ContextManager:
         self.config: ConfigLoader = self.locator.resolve("config_loader")
         self.logger = logging.getLogger(self.__class__.__name__)
         
-        self.history: List[Dict[str, str]] = []
+        # --- FIX: Change type hint from str to Any ---
+        self.history: List[Dict[str, Any]] = []
         self._load_config()
         
         # Subscribe to config changes to reload settings
@@ -30,17 +32,21 @@ class ContextManager:
         self.summarize_threshold = context_config.get("summarize_threshold", 20)
         self.logger.info(f"ContextManager settings loaded: max_messages={self.max_messages}")
 
-    def add_message(self, role: str, content: str):
+    # --- FIX: Change type hint from str to Any ---
+    def add_message(self, role: str, content: Any):
         """Adds a new message to the history."""
-        # Roles should be 'user' or 'model' (for Gemini/Ollama)
-        if role not in ["user", "model"]:
-            self.logger.warning(f"Invalid message role '{role}'. Defaulting to 'user'.")
-            role = "user"
+        # LiteLLM standard roles are 'user' and 'assistant'
+        if role not in ["user", "assistant"]:
+            self.logger.warning(f"Invalid message role '{role}'. DefaultOperation 'user'.")
+            # If it's not 'user' or 'assistant', it's probably a bug
+            # Let's be safer and default to 'user'
+            role = "user" 
             
         self.history.append({"role": role, "content": content})
         self.enforce_limits()
 
-    def get_context(self) -> List[Dict[str, str]]:
+    # --- FIX: Change type hint from str to Any ---
+    def get_context(self) -> List[Dict[str, Any]]:
         """
         Gets the current conversation context.
         In the future, this will prepend a summary.
@@ -61,7 +67,8 @@ class ContextManager:
             self.history = self.history[-self.max_messages:]
             self.logger.debug(f"History truncated to {self.max_messages} messages.")
             
-    def get_full_history(self) -> List[Dict[str, str]]:
+    # --- FIX: Change type hint from str to Any ---
+    def get_full_history(self) -> List[Dict[str, Any]]:
         """Returns the entire, untruncated history."""
         return self.history
 

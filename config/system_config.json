@@ -10,5 +10,10 @@
     "context": {
         "max_messages": 50,
         "summarize_threshold": 20
+    },
+    "plugins": {
+        "ScreenCapture": {
+            "enabled": true
+        }
     }
 }

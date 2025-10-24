@@ -7,6 +7,11 @@ import customtkinter as ctk
 from pathlib import Path
 from typing import Optional
 
+# --- ADD THESE IMPORTS ---
+import os
+import sys
+# --- END ADD ---
+
 from core.service_locator import locator, ServiceLocator
 from core.command_executor import CommandExecutor
 from core.event_dispatcher import EventDispatcher
@@ -43,7 +48,8 @@ class PersonalAIAgentApp(ctk.CTk):
         
         # This will hold the asyncio loop running in the background thread
         self.async_loop = None
-        self.async_loop = None
+
+        self._restart_requested = False
         
         # Register the app itself in the locator so other services can use it
         # e.g., to open windows from a background thread
@@ -80,6 +86,7 @@ class PersonalAIAgentApp(ctk.CTk):
         events: EventDispatcher = self.locator.resolve("event_dispatcher")
         events.subscribe("UI_EVENT.OPEN_CHAT", self.show_popup_window)
         events.subscribe("UI_EVENT.OPEN_SETTINGS", self.show_settings_window)
+
     def show_popup_window(self, *args, **kwargs):
         """Thread-safe method to show the popup window."""
         # Use .after() to schedule UI changes from any thread.
@@ -98,6 +105,33 @@ class PersonalAIAgentApp(ctk.CTk):
                 self.settings_window = SettingsWindow(self)
             self.settings_window.show()
         self.after(0, _show_settings)
+
+    # --- ADD THESE TWO METHODS ---
+    def restart(self):
+        """Sets a flag to restart and then quits the application."""
+        # Set the flag so the main thread knows to restart
+        self._restart_requested = True
+        # Call quit() to gracefully shut down the main loop
+        self.quit()
+            
+    def quit(self):
+        """
+        Gracefully shuts down all windows and the main tkinter loop.
+        """
+        # --- ADD THIS ---
+        # Explicitly destroy child windows first to prevent race conditions
+        try:
+            if self.popup_window:
+                self.popup_window.destroy()
+            if self.settings_window:
+                self.settings_window.destroy()
+        except Exception as e:
+            # Log any errors during child window destruction
+            logging.warning(f"Error destroying child windows: {e}")
+        # --- END ADD ---
+
+        # Now, destroy the main root window
+        self.destroy()
 
     def start_asyncio_loop(self):
         """Runs the main asyncio event loop in a separate thread."""
@@ -209,3 +243,13 @@ if __name__ == "__main__":
     app.mainloop()
     
     logging.info("Application shutting down.")
+
+    if app._restart_requested:
+        logging.info("Restart requested. Relaunching application...")
+        try:
+            # Your command to restart using 'uv'
+            os.execvp('uv', ['uv', 'run', 'main.py'])
+        except Exception as e:
+            logging.error(f"Failed to restart: {e}", exc_info=True)
+    else:
+        logging.info("Exiting normally.")

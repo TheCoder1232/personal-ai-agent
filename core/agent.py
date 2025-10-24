@@ -28,6 +28,9 @@ class Agent:
         
         self.current_role_id: Optional[str] = None
         
+        # --- FIX: Add this line to initialize the attribute ---
+        self.pending_image_data: Optional[str] = None
+
         # Subscribe to the event from the UI
         self.events.subscribe("AGENT_EVENT.QUERY_RECEIVED", self.process_query)
         self.events.subscribe("AGENT_EVENT.CLEAR_CONTEXT", self.on_clear_context)
@@ -60,26 +63,37 @@ class Agent:
         """
         self.logger.info(f"Processing query: '{user_message[:50]}...'")
 
-        # --- NEW: Check for pending image ---
-        # If the query is coming in, and we have a stored image,
-        # attach it to this query and clear the pending image.
-        if self.pending_image_data:
-            self.logger.info("Attaching pending screen capture to this query.")
-            image_data = self.pending_image_data
-            self.pending_image_data = None # Consume the image
+        # --- FIX: Check for image and format message ---
         
+        # The 'image_data' argument is already passed from popup_window.py
+        # We just need to consume the pending image in the agent's state
+        # so it's not used twice.
         if image_data:
-            self.logger.info("Query includes image data.")
-            # TODO: Add image data to the message for the LLM
-            # LiteLLM format for vision:
-            # "content": [
-            #   {"type": "text", "text": "What's in this image?"},
-            #   {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,..."}}
-            # ]
-        
+            self.pending_image_data = None # Consume the pending image
+            self.logger.info("Query includes image data, formatting for multimodal.")
+            
         try:
-            # 1. Add user message to context
-            self.context_manager.add_message("user", user_message)
+            # 1. Format the message content
+            message_content: any # Can be str or list
+            
+            if image_data:
+                # This is the multimodal format from your TODO
+                message_content = [
+                    {"type": "text", "text": user_message},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            # Prepend the data URI scheme, which is required
+                            "url": f"data:image/jpeg;base64,{image_data}" 
+                        }
+                    }
+                ]
+            else:
+                # This is a standard text-only message
+                message_content = user_message
+
+            # 2. Add the (potentially complex) message to context
+            self.context_manager.add_message("user", message_content)
 
             # 2. Select role (and get system prompt)
             # We pass the current_role_id to maintain conversational context
@@ -112,7 +126,7 @@ class Agent:
                 await self.events.publish("API_EVENT.RESPONSE_CHUNK", chunk=chunk)
             
             # 5. Add full model response to context
-            self.context_manager.add_message("model", full_response)
+            self.context_manager.add_message("assistant", full_response)
             
             # 6. Publish final response
             self.logger.info(f"Full response generated ({len(full_response)} chars).")

@@ -39,6 +39,9 @@ class SettingsWindow(ctk.CTkToplevel):
         self.gemini_test_model_var = ctk.StringVar()
         self.openrouter_test_model_var = ctk.StringVar()
         self.ollama_test_model_var = ctk.StringVar()
+        
+        # --- NEW: StringVars for plugin settings ---
+        self.plugin_screencapture_enabled_var = ctk.StringVar(value="on")
 
         # --- Unsaved Changes Flag ---
         self.has_unsaved_changes = False
@@ -65,7 +68,8 @@ class SettingsWindow(ctk.CTkToplevel):
         self._add_nav_item("Models", self.create_models_tab)
         self._add_nav_item("API Keys", self.create_api_keys_tab)
         self._add_nav_item("Hotkeys", self.create_hotkeys_tab)
-        self._add_nav_item("Plugins", self.create_coming_soon_tab, is_disabled=True)
+        # --- MODIFIED: Enabled Plugins tab ---
+        self._add_nav_item("Plugins", self.create_plugins_tab) 
         self._add_nav_item("MCP Servers", self.create_coming_soon_tab, is_disabled=True)
         
         # --- Save/Close Buttons ---
@@ -471,7 +475,7 @@ class SettingsWindow(ctk.CTkToplevel):
         ctk.CTkLabel(parent_frame, text="Open Chat:").grid(row=0, column=0, padx=10, pady=10, sticky="w")
         self.hotkey_chat_entry = ctk.CTkEntry(parent_frame)
         self.hotkey_chat_entry.grid(row=0, column=1, padx=10, pady=10, sticky="ew")
-        
+
         ctk.CTkLabel(parent_frame, text="Screen Capture:").grid(row=1, column=0, padx=10, pady=10, sticky="w")
         self.hotkey_screen_entry = ctk.CTkEntry(parent_frame)
         self.hotkey_screen_entry.grid(row=1, column=1, padx=10, pady=10, sticky="ew")
@@ -479,6 +483,24 @@ class SettingsWindow(ctk.CTkToplevel):
         self.hotkey_chat_entry.bind("<KeyRelease>", self._mark_dirty)
         self.hotkey_screen_entry.bind("<KeyRelease>", self._mark_dirty)
         
+    # --- NEW: Plugins Tab ---
+    def create_plugins_tab(self, parent_frame):
+        parent_frame.grid_columnconfigure(1, weight=1)
+        
+        # --- Screen Capture Plugin ---
+        ctk.CTkLabel(parent_frame, text="Screen Capture Plugin", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, padx=10, pady=10, sticky="w")
+        
+        self.plugin_screencapture_checkbox = ctk.CTkCheckBox(
+            parent_frame,
+            text="Enable Plugin (Hotkeys will be disabled if unchecked)",
+            variable=self.plugin_screencapture_enabled_var,
+            onvalue="on",
+            offvalue="off"
+        )
+        self.plugin_screencapture_checkbox.grid(row=1, column=0, columnspan=2, padx=15, pady=5, sticky="w")
+        
+        self.plugin_screencapture_enabled_var.trace_add("write", self._mark_dirty)
+
     # --- Helper to get combined model list ---
     def _get_all_models_formatted(self) -> list[str]:
         formatted_list = []
@@ -569,6 +591,11 @@ class SettingsWindow(ctk.CTkToplevel):
         self.hotkey_screen_entry.delete(0, "end")
         self.hotkey_screen_entry.insert(0, system_config.get("hotkeys", {}).get("screen_capture", "<ctrl>+<shift>+x"))
 
+        # --- NEW: Load Plugin Config ---
+        plugin_config = system_config.get("plugins", {}).get("ScreenCapture", {})
+        plugin_enabled = plugin_config.get("enabled", True) # Default to True if not specified
+        self.plugin_screencapture_enabled_var.set("on" if plugin_enabled else "off")
+
         # --- FIX: Set loading flag to FALSE (#2) ---
         self.is_loading_settings = False
 
@@ -611,6 +638,10 @@ class SettingsWindow(ctk.CTkToplevel):
         system_config = self.config.get_config("system_config.json")
         system_config["hotkeys"]["open_chat"] = self.hotkey_chat_entry.get()
         system_config["hotkeys"]["screen_capture"] = self.hotkey_screen_entry.get()
+        # --- NEW: Save Plugin Config ---
+        system_config.setdefault("plugins", {}).setdefault("ScreenCapture", {})
+        system_config["plugins"]["ScreenCapture"]["enabled"] = (self.plugin_screencapture_enabled_var.get() == "on")
+        
         self.config.save_config("system_config.json", system_config)
 
         self.publish_async_event("UI_EVENT.SETTINGS_CHANGED")

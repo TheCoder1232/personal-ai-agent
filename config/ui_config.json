@@ -9,9 +9,9 @@
     "minimize_to_tray": true,
     "markdown_rendering": true,
     "settings_window": {
-        "geometry": "995x480+393+120"
+        "geometry": "995x480+228+112"
     },
     "popup_window": {
-        "geometry": "400x600+1051+136"
+        "geometry": "398x594+1266+171"
     }
 }

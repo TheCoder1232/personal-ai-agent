@@ -24,6 +24,7 @@ class TrayManager:
             pystray.MenuItem("Open Chat", self.on_open_chat, default=True),
             pystray.MenuItem("Settings", self.on_open_settings),
             pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Restart", self.on_restart),
             pystray.MenuItem("Quit", self.on_quit)
         )
         
@@ -31,7 +32,6 @@ class TrayManager:
 
     def start(self):
         """Starts the pystray icon in a separate thread."""
-        # pystray.Icon.run() is blocking, so it needs its own thread
         thread = threading.Thread(target=self.icon.run, daemon=True)
         thread.start()
 
@@ -40,8 +40,7 @@ class TrayManager:
         Publishes an event to open the chat window.
         This is called from the pystray thread.
         """
-        # We don't need to wrap this in an async call since the App's
-        # .show_popup_window method uses .after() to make it thread-safe.
+        # This is already thread-safe because it uses .after()
         self.app.show_popup_window()
 
     def on_open_settings(self):
@@ -49,9 +48,21 @@ class TrayManager:
         Publishes an event to open the settings window.
         This is called from the pystray thread.
         """
+        # This is already thread-safe because it uses .after()
         self.app.show_settings_window()
+
+    def on_restart(self):
+        """Stops the tray icon and tells the main app to restart."""
+        self.icon.stop()
+        
+        # --- FIX: Schedule the restart on the main UI thread ---
+        # This makes the call thread-safe
+        self.app.after(0, self.app.restart) 
 
     def on_quit(self):
         """Stops the tray icon and exits the application."""
         self.icon.stop()
-        self.app.quit() # Shuts down the main tkinter loop
+        
+        # --- FIX: Schedule the quit on the main UI thread ---
+        # This makes the call thread-safe
+        self.app.after(0, self.app.quit)

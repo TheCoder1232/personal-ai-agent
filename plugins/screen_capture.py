@@ -40,6 +40,21 @@ class ScreenCapturePlugin(PluginBase):
         Event handler for the capture request (e.g., from hotkey).
         This runs in the asyncio thread.
         """
+
+        # --- NEW: Check if plugin is enabled ---
+        try:
+            system_config = self.config_loader.get_config("system_config.json")
+            plugin_config = system_config.get("plugins", {}).get("ScreenCapture", {})
+            is_enabled = plugin_config.get("enabled", True) # Default to True
+        
+            if not is_enabled:
+                self.logger.info("Screen capture request received, but plugin is disabled.")
+                return
+        except Exception as e:
+            self.logger.error(f"Failed to read plugin enabled config: {e}")
+            # Proceed as if enabled, but log the error
+        # --- END NEW ---
+
         self.logger.info("Screen capture request received.")
         
         try:
@@ -47,12 +62,17 @@ class ScreenCapturePlugin(PluginBase):
             # We run it in a thread to avoid blocking the async loop
             image_bytes, original_size = await asyncio.to_thread(self.capture_screen)
             if not image_bytes or not original_size:
+                self.logger.warning("Capture screen returned no data.")
                 return
 
             # 2. Resize and Encode (this is CPU bound)
             # Also run in a thread
             encoded_image = await asyncio.to_thread(self.process_image, image_bytes, original_size)
             
+            if not encoded_image:
+                self.logger.error("Image processing failed, returned no data.")
+                return
+
             self.logger.info(f"Screen captured and encoded (Base64 length: {len(encoded_image)}).")
             
             # 3. Emit event with image data for the agent
@@ -80,31 +100,42 @@ class ScreenCapturePlugin(PluginBase):
             with mss.mss() as sct:
                 # Get a screenshot of all monitors combined
                 sct_img = sct.grab(sct.monitors[0])
-                # Convert to raw bytes in PNG format
-                img_bytes = sct_img.bgra
+                # Convert to raw bytes in BGRA format
+                img_bytes = sct_img.rgb
                 return img_bytes, sct_img.size
         except Exception as e:
             self.logger.error(f"MSS capture failed: {e}")
             return None, None
 
-    def process_image(self, image_bytes: bytes, original_size: tuple) -> str:
+    def process_image(self, image_bytes: bytes, original_size: tuple) -> Optional[str]:
         """Resizes, compresses, and base64 encodes the image."""
         
-        # Load image from bytes into PIL
-        img = Image.open(io.BytesIO(image_bytes))
-        
-        # Resize if it's too large
-        width, height = original_size
-        if width > self.max_width:
-            self.logger.debug(f"Resizing image from {width}px to {self.max_width}px width.")
-            scale = self.max_width / width
-            new_height = int(height * scale)
-            img = img.resize((self.max_width, new_height), Image.Resampling.LANCZOS)
+        try:
+            # --- BUG FIX: Load image from raw BGRA bytes, not from a file buffer ---
+            # img = Image.open(io.BytesIO(image_bytes)) # <-- This was the bug
+            img = Image.frombytes("RGB", original_size, image_bytes)
+            
+            # Convert to RGB before saving as JPEG (JPEG doesn't support alpha)
+            if img.mode == 'BGRA' or img.mode == 'RGBA':
+                img = img.convert('RGB')
+            # --- END FIX ---
+            
+            # Resize if it's too large
+            width, height = original_size
+            if width > self.max_width:
+                self.logger.debug(f"Resizing image from {width}px to {self.max_width}px width.")
+                scale = self.max_width / width
+                new_height = int(height * scale)
+                img = img.resize((self.max_width, new_height), Image.Resampling.LANCZOS)
 
-        # Save to a new in-memory buffer, with compression
-        output_buffer = io.BytesIO()
-        img.save(output_buffer, format="JPEG", quality=85) # Use JPEG for better compression
+            # Save to a new in-memory buffer, with compression
+            output_buffer = io.BytesIO()
+            img.save(output_buffer, format="JPEG", quality=85) # Use JPEG for better compression
+            
+            # Get bytes and Base64 encode
+            img_bytes_jpeg = output_buffer.getvalue()
+            return base64.b64encode(img_bytes_jpeg).decode('utf-8')
         
-        # Get bytes and Base64 encode
-        img_bytes = output_buffer.getvalue()
-        return base64.b64encode(img_bytes).decode('utf-8')
+        except Exception as e:
+            self.logger.error(f"Failed to process image: {e}", exc_info=True)
+            return None
