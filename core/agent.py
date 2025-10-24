@@ -8,6 +8,7 @@ from core.event_dispatcher import EventDispatcher
 from core.api_manager import ApiManager
 from core.context_manager import ContextManager
 from core.role_selector import RoleSelector
+from typing import Any
 
 class Agent:
     """
@@ -74,7 +75,7 @@ class Agent:
             
         try:
             # 1. Format the message content
-            message_content: any # Can be str or list
+            message_content: Any # Can be str or list
             
             if image_data:
                 # This is the multimodal format from your TODO

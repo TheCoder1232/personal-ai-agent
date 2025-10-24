@@ -116,7 +116,7 @@ class HTMLFormatter:
             return markdown.markdown(
                 md_content, 
                 extensions=['fenced_code'],
-                output_format='html5'
+                output_format='html'
             )
         except Exception as e:
             logging.getLogger(__name__).error(f"Markdown conversion error: {e}")
@@ -140,6 +140,9 @@ class HTMLFormatter:
             return self._style_cache[content_hash]
         
         try:
+            # Ensure BeautifulSoup is present (guards static type checkers and runtime)
+            if BeautifulSoup is None:
+                return html_content
             soup = BeautifulSoup(html_content, 'html.parser')
             
             # Apply styles only to unstyled elements
