@@ -2,8 +2,34 @@
 
 import logging
 import sys
+import os
+import psutil
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+
+# --- ADDED: MemoryLogFilter ---
+class MemoryLogFilter(logging.Filter):
+    """
+    Injects current process memory (RSS) into log records.
+    """
+    def __init__(self):
+        super().__init__()
+        # Cache the process object for efficiency
+        try:
+            self.process = psutil.Process(os.getpid())
+        except psutil.NoSuchProcess:
+            self.process = None # Handle edge case
+
+    def filter(self, record):
+        if self.process:
+            mem_info = self.process.memory_info()
+            # Add memory usage in MB to the log record
+            record.mem_rss_mb = mem_info.rss / (1024 * 1024)
+        else:
+            record.mem_rss_mb = 0.0
+        return True
+# --- END ADDED SECTION ---
+
 
 def setup_logging(config_loader):
     """
@@ -25,14 +51,18 @@ def setup_logging(config_loader):
     log_dir.mkdir(parents=True, exist_ok=True)
     log_file = log_dir / "agent.log"
     
-    # Define log format
+    # --- MODIFIED: Log format ---
     log_format = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s (%(filename)s:%(lineno)d)"
+        "%(asctime)s - %(name)s - %(levelname)s - [%(mem_rss_mb)4.1fMB] - %(message)s (%(filename)s:%(lineno)d)"
     )
+    # --- END MODIFIED SECTION ---
     
     # Get root logger
     logger = logging.getLogger()
     logger.setLevel(log_level)
+    
+    # --- ADDED: Create filter instance ---
+    memory_filter = MemoryLogFilter()
     
     # --- Console Handler ---
     # Avoid adding duplicate handlers
@@ -40,6 +70,7 @@ def setup_logging(config_loader):
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setLevel(log_level)
         console_handler.setFormatter(log_format)
+        console_handler.addFilter(memory_filter) # Add filter
         logger.addHandler(console_handler)
     
     # --- Rotating File Handler ---
@@ -50,6 +81,7 @@ def setup_logging(config_loader):
         )
         file_handler.setLevel(log_level)
         file_handler.setFormatter(log_format)
+        file_handler.addFilter(memory_filter) # Add filter
         logger.addHandler(file_handler)
 
     logging.info("--- Logging initialized ---")

@@ -2,29 +2,63 @@
 
 import importlib.util
 import inspect
-import logging # <-- NEW
+import logging
 from pathlib import Path
-from typing import List, Dict, Type
+from typing import List, Dict, Type, Tuple
 from core.service_locator import ServiceLocator
 from plugins import PluginBase
+# --- ADDED: Custom Exception Imports ---
+from core.exceptions import PluginLoadError
+# --- ADDED: MemoryManager Import ---
+from core.memory_manager import MemoryManager
 
 class PluginManager:
     def __init__(self, service_locator: ServiceLocator):
         self.locator = service_locator
         self.plugins_dir = Path(__file__).parent.parent / "plugins"
-        self.loaded_plugins: Dict[str, PluginBase] = {}
+        
+        # --- MODIFIED: Renamed for clarity ---
+        self._loaded_plugins: Dict[str, PluginBase] = {}
+        
+        # --- NEW: Stores metadata for lazy loading ---
+        # Maps: plugin_id -> (file_path, class_name)
+        self._plugin_registry: Dict[str, Tuple[Path, str]] = {}
+        
+        # --- MODIFIED: Resolve MemoryManager ---
         self.event_dispatcher = self.locator.resolve("event_dispatcher")
-        self.logger = logging.getLogger(self.__class__.__name__) # <-- NEW
+        self.logger = logging.getLogger(self.__class__.__name__)
+        # Resolve memory manager, but it might not be registered in tests
+        try:
+            self.memory_manager: MemoryManager = self.locator.resolve("memory_manager")
+        except KeyError:
+            self.logger.warning("MemoryManager not registered. Plugin memory tracking will be disabled.")
+            self.memory_manager = None # type: ignore
+        # --- END MODIFIED SECTION ---
+            
+        # --- NEW: Load config to check lazy_load setting ---
+        try:
+            config_loader = self.locator.resolve("config_loader")
+            self.lazy_load_enabled = config_loader.get("system_config.json", "lazy_load_plugins", True)
+        except Exception as e:
+            self.logger.warning(f"Could not read config. Defaulting to lazy_load_plugins=True. Error: {e}")
+            self.lazy_load_enabled = True
+            
+        # --- NEW: Discover plugins on init, but don't load ---
+        self._discover_plugins_sync()
 
-    async def load_plugins(self):
-        self.logger.info(f"Loading plugins from: {self.plugins_dir}") # <-- MODIFIED
+
+    def _discover_plugins_sync(self):
+        """
+        Synchronously discovers plugins by scanning files and reading metadata.
+        This does NOT initialize the plugins.
+        """
+        self.logger.info(f"Discovering plugins from: {self.plugins_dir}")
         
         for file_path in self.plugins_dir.glob("*.py"):
             if file_path.name == "__init__.py":
                 continue
 
             module_name = file_path.stem
-            self.logger.debug(f"Found potential plugin: {module_name}") # <-- MODIFIED
             
             try:
                 spec = importlib.util.spec_from_file_location(module_name, file_path)
@@ -36,42 +70,151 @@ class PluginManager:
 
                 for name, obj in inspect.getmembers(module, inspect.isclass):
                     if issubclass(obj, PluginBase) and obj is not PluginBase:
-                        self.logger.debug(f"  -> Found plugin class: {name}") # <-- MODIFIED
+                        self.logger.debug(f"  -> Found plugin class: {name}")
                         
-                        try: # --- NEW: Safety wrapper for individual plugin ---
+                        try:
+                            # --- CRITICAL: We must instantiate to get metadata ---
+                            # But we DO NOT call initialize() here.
                             plugin_instance: PluginBase = obj(self.locator)
-                            plugin_instance.initialize()
-                            
                             metadata = plugin_instance.get_metadata()
                             plugin_id = metadata.get("name", module_name)
-                            self.loaded_plugins[plugin_id] = plugin_instance
                             
-                            self.logger.info(f"  -> Successfully loaded and initialized '{plugin_id}'") # <-- MODIFIED
+                            # Store how to load it later
+                            self._plugin_registry[plugin_id] = (file_path, name) # (file_path, class_name)
+                            self.logger.info(f"  -> Discovered '{plugin_id}'")
                             
-                            await self.event_dispatcher.publish(
-                                "PLUGIN_EVENT.LOADED", 
-                                plugin_id=plugin_id,
-                                metadata=metadata
-                            )
-                        except Exception as e: # --- NEW ---
-                            self.logger.error(f"  -> FAILED to load plugin {name} from {file_path.name}: {e}", exc_info=True)
-                            await self.event_dispatcher.publish(
-                                "ERROR_EVENT.PLUGIN_CRASH", 
-                                plugin_name=name,
-                                error=str(e)
-                            )
-                        # --- END NEW ---
-                        
+                        except Exception as e:
+                            self.logger.error(f"  -> FAILED to discover metadata for {name} from {file_path.name}: {e}", exc_info=True)
+            
             except Exception as e:
-                self.logger.error(f"Error loading module from {file_path.name}: {e}", exc_info=True) # <-- MODIFIED
-                await self.event_dispatcher.publish(
-                    "ERROR_EVENT.PLUGIN_CRASH", 
-                    plugin_file=file_path.name,
-                    error=str(e)
-                )
+                self.logger.error(f"Error discovering module from {file_path.name}: {e}", exc_info=True)
 
-    # ... (rest of file is unchanged)
-    def get_plugin(self, name: str) -> PluginBase:
-        return self.loaded_plugins[name]
+
+    async def discover_and_load_plugins(self):
+        """
+        Handles the main plugin loading strategy based on config.
+        """
+        if self.lazy_load_enabled:
+            self.logger.info(f"Lazy loading enabled. {len(self._plugin_registry)} plugins discovered.")
+            # Do nothing else; plugins will be loaded on-demand by get_plugin()
+        else:
+            # Eager loading: load all discovered plugins now
+            self.logger.info(f"Eager loading {len(self._plugin_registry)} discovered plugins...")
+            for plugin_id in self._plugin_registry.keys():
+                try:
+                    await self.get_plugin(plugin_id) # This will force-load it
+                # --- MODIFIED: Catch our custom error ---
+                except PluginLoadError as e:
+                    # Log the error, but continue loading other plugins (Plugin Isolation)
+                    self.logger.error(f"Failed to eager-load plugin '{plugin_id}': {e}", exc_info=False) # Already logged
+                except Exception as e:
+                    self.logger.error(f"Unexpected error eager-loading plugin '{plugin_id}': {e}", exc_info=True)
+
+
+    async def _load_plugin(self, name: str) -> PluginBase:
+        """
+        Internal async method to load, initialize, and register a single plugin.
+        """
+        if name not in self._plugin_registry:
+            # --- MODIFIED: Raise custom exception ---
+            raise PluginLoadError(f"Plugin '{name}' not found in registry. It was not discovered.")
+
+        file_path, class_name = self._plugin_registry[name]
+        self.logger.debug(f"Loading '{name}' from {file_path.name} (class: {class_name})")
+        
+        try:
+            # Re-import the module
+            spec = importlib.util.spec_from_file_location(file_path.stem, file_path)
+            if not spec or not spec.loader:
+                raise ImportError(f"Could not create spec for {file_path.stem}")
+            
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+
+            # Get the specific class
+            plugin_class: Type[PluginBase] = getattr(module, class_name)
+            if not plugin_class:
+                raise ImportError(f"Could not find class {class_name} in {file_path.name}")
+            
+            # --- This is the part from the old load_plugins ---
+            plugin_instance: PluginBase = plugin_class(self.locator)
+            plugin_instance.initialize() # <--- This is where a plugin can fail
+            
+            metadata = plugin_instance.get_metadata()
+            
+            self.logger.info(f"  -> Successfully loaded and initialized '{name}'")
+            
+            # --- ADDED: Track with MemoryManager ---
+            if self.memory_manager:
+                self.memory_manager.track_component(f"plugin:{name}")
+                self.logger.debug(f"Registered plugin '{name}' with MemoryManager.")
+            # --- END ADDED SECTION ---
+            
+            await self.event_dispatcher.publish(
+                "PLUGIN_EVENT.LOADED", 
+                plugin_id=name,
+                metadata=metadata
+            )
+            return plugin_instance
+
+        # --- START: MODIFIED SECTION ---
+        # Catch specific code-level errors
+        except (ImportError, AttributeError, TypeError) as e:
+            self.logger.error(f"  -> FAILED (Code Error) to load plugin {name} from {file_path.name}: {e}", exc_info=True)
+            await self.event_dispatcher.publish(
+                "ERROR_EVENT.PLUGIN_CRASH", 
+                plugin_name=name,
+                error=str(e)
+            )
+            # Wrap in our custom exception
+            raise PluginLoadError(f"Code error loading {name}: {e}") from e
+        # Catch errors from the plugin's own initialize() method
+        except Exception as e:
+            self.logger.error(f"  -> FAILED (Init Error) to load plugin {name} from {file_path.name}: {e}", exc_info=True)
+            await self.event_dispatcher.publish(
+                "ERROR_EVENT.PLUGIN_CRASH", 
+                plugin_name=name,
+                error=str(e)
+            )
+            # Wrap in our custom exception
+            raise PluginLoadError(f"Plugin '{name}' failed during initialize(): {e}") from e
+        # --- END: MODIFIED SECTION ---
+
+    
+    async def get_plugin(self, name: str) -> PluginBase:
+        """
+        Gets a plugin by name.
+        If lazy loading is enabled, this will load the plugin on first call.
+        NOTE: This method is now ASYNCHRONOUS.
+        """
+        # 1. Check if already loaded
+        if name in self._loaded_plugins:
+            return self._loaded_plugins[name]
+        
+        # 2. Check if it exists but isn't loaded
+        if name not in self._plugin_registry:
+            # --- MODIFIED: Raise custom exception ---
+            raise PluginLoadError(f"Plugin '{name}' is not discovered.")
+
+        # 3. Load it (if lazy loading)
+        if not self.lazy_load_enabled:
+            # This shouldn't happen if eager-loading was successful
+            self.logger.warning(f"Plugin '{name}' was not eager-loaded. Attempting to load now.")
+        
+        self.logger.info(f"Lazy loading plugin: {name}...")
+        try:
+            plugin_instance = await self._load_plugin(name)
+            self._loaded_plugins[name] = plugin_instance
+            return plugin_instance
+        # --- MODIFIED: Catch our custom exception ---
+        except PluginLoadError as e:
+            self.logger.error(f"Failed to lazy-load plugin '{name}': {e}", exc_info=False) # Already logged
+            raise e # Re-raise
+        except Exception as e:
+            self.logger.error(f"Unexpected error lazy-loading plugin '{name}': {e}", exc_info=True)
+            # Wrap in our custom exception
+            raise PluginLoadError(f"Unexpected error loading {name}: {e}") from e
+
     def get_all_plugins(self) -> List[PluginBase]:
-        return list(self.loaded_plugins.values())
+        """Returns a list of *already loaded* plugins."""
+        return list(self._loaded_plugins.values())

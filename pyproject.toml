@@ -14,9 +14,19 @@ dependencies = [
     "mcp[cli]>=1.18.0",
     "mss>=10.1.0",
     "pillow>=10.4.0",
+    "psutil>=7.1.2",
     "pynput>=1.8.1",
     "pystray>=0.19.5",
     "requests>=2.32.5",
     "tenacity>=9.1.2",
     "tkhtmlview>=0.3.1",
+]
+
+[tool.setuptools]
+packages = ["core", "utils", "ui", "plugins", "input"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.2",
+    "pytest-asyncio>=0.23.7",
 ]

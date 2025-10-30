@@ -1,0 +1,180 @@
+Metadata-Version: 2.4
+Name: personal-ai-agent
+Version: 0.1.0
+Summary: Add your description here
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: beautifulsoup4>=4.14.2
+Requires-Dist: customtkinter>=5.2.2
+Requires-Dist: google-api-core>=2.26.0
+Requires-Dist: google-genai>=1.45.0
+Requires-Dist: litellm>=1.78.4
+Requires-Dist: markdown>=3.9
+Requires-Dist: mcp[cli]>=1.18.0
+Requires-Dist: mss>=10.1.0
+Requires-Dist: pillow>=10.4.0
+Requires-Dist: pynput>=1.8.1
+Requires-Dist: pystray>=0.19.5
+Requires-Dist: requests>=2.32.5
+Requires-Dist: tenacity>=9.1.2
+Requires-Dist: tkhtmlview>=0.3.1
+Provides-Extra: dev
+Requires-Dist: pytest>=8.3.2; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.23.7; extra == "dev"
+
+# Personal AI Agent
+
+A highly extensible, plugin-based personal AI assistant that runs on your local machine. Built with Python, CustomTkinter, and LiteLLM.
+
+-----
+
+## Features
+
+  - **Plugin-Based Architecture**: Dynamically load features from the `/plugins` folder.
+  - **Multi-Model Support**: Seamlessly switch between any LLM provider (Gemini, Ollama, OpenRouter, etc.) thanks to **LiteLLM**.
+  - **Context-Aware**: Remembers your conversation and selects the best "role" (e.g., Coding Assistant) for your query.
+  - **Interactive UI**:
+      - Modern UI built with CustomTkinter.
+      - Runs in your system tray.
+      - Global hotkeys (`Ctrl+Shift+Space`) to open the chat window.
+      - Dark / Light / System theme support.
+      - Remembers window position and size.
+  - **Extensible Tools**:
+      - **Screen Capture**: Press `Ctrl+Shift+X` to attach a screenshot to your message.
+      - **MCP Integration**: (Model Context Protocol) A framework for adding custom tools (e.g., file system access, web search).
+
+-----
+
+## Project Structure
+
+```bash
+personal-ai-agent/
+├── core/     # Core services (DI, events, agent, api)
+├── plugins/  # All plugins (screen_capture, mcp, etc.)
+├── config/   # All user-facing JSON configs
+│   └── prompts/ # System prompts for agent roles
+├── ui/       # CustomTkinter windows and widgets
+├── input/    # Global hotkey manager
+├── utils/    # Helpers (logger, config loader)
+└── main.py   # Main application entry point
+```
+
+-----
+
+## Setup & Installation
+
+### 1\. Prerequisites
+
+  - Python 3.10+
+  - An API key for at least one LLM provider (e.g., Google Gemini).
+
+### 2\. Clone the Repository
+
+```bash
+git clone https://github.com/your-username/personal-ai-agent.git
+cd personal-ai-agent
+```
+
+### 3\. Install Dependencies
+
+It's highly recommended to use a virtual environment.
+
+```bash
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+```
+
+Install the required packages.
+
+**Recommended (using `requirements.txt`):**
+
+```bash
+pip install -r requirements.txt
+```
+
+**Manual Installation (if `requirements.txt` is missing):**
+
+```bash
+pip install customtkinter pystray pynput tkhtmlview pillow litellm mss markdown tenacity
+```
+
+### 4\. Configure API Keys
+
+The application uses environment variables for API keys. This is the most secure method.
+
+**On macOS/Linux:**
+
+```bash
+export GEMINI_API_KEY="your_google_ai_studio_key"
+export OPENROUTER_API_KEY="your_openrouter_key"
+```
+
+**On Windows (Command Prompt):**
+
+```bash
+set GEMINI_API_KEY="your_google_ai_studio_key"
+```
+
+### 5\. Run the Application
+
+```bash
+python main.py
+```
+
+The app will start and show an icon in your system tray. All configurations (like models and hotkeys) will be in the `config/` folder.
+
+-----
+
+## How to Use
+
+  - **Open Chat**: Press `Ctrl+Shift+Space` or click the tray icon.
+  - **Open Settings**: Right-click the tray icon and select "Settings".
+  - **Take Screenshot**: Press `Ctrl+Shift+X`. The chat window will open with a "Screenshot Attached" notice.
+  - **Send Message**: Type your message and press `Ctrl+Enter`.
+  - **Add Newline**: Press `Shift+Enter` to add a new line in the chat box.
+
+-----
+
+## How to Develop a New Plugin
+
+1.  Create a new file in `plugins/`, e.g., `my_plugin.py`.
+2.  Import the base class: `from plugins import PluginBase`.
+3.  Create your class: `class MyAwesomePlugin(PluginBase):`
+4.  Implement the required methods: `__init__`, `Youtube`, and `initialize`.
+
+**Example: `plugins/hello_plugin.py`**
+
+```python
+import logging
+from plugins import PluginBase
+from core.service_locator import ServiceLocator
+from core.event_dispatcher import EventDispatcher
+
+class HelloPlugin(PluginBase):
+    
+    def __init__(self, service_locator: ServiceLocator):
+        super().__init__(service_locator)
+        # Get core services
+        self.events: EventDispatcher = self.locator.resolve("event_dispatcher")
+        self.logger = logging.getLogger(self.__class__.__name__)
+
+    def get_metadata(self):
+        return {
+            "name": "HelloPlugin",
+            "version": "1.0.0",
+            "description": "A simple plugin that says hello."
+        }
+
+    def initialize(self):
+        # Subscribe to an event
+        self.events.subscribe("APP_START", self.say_hello)
+        self.logger.info("HelloPlugin initialized.")
+        
+    async def say_hello(self):
+        self.logger.info("Hello from the HelloPlugin!")
+        await self.events.publish(
+            "NOTIFICATION_EVENT.INFO",
+            title="Hello Plugin",
+            message="Hello, world! The app has started."
+        )
+```

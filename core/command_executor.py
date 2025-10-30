@@ -2,80 +2,67 @@
 
 import logging
 import asyncio
-import subprocess
-from typing import Tuple, Optional
+from typing import Tuple, Any
 
 from core.service_locator import locator
 from core.event_dispatcher import EventDispatcher
+# --- NEW IMPORTS ---
+from core.commands.base_command import BaseCommand
+from core.commands.command_history import CommandHistory
+from utils.config_loader import ConfigLoader
 
 class CommandExecutor:
     """
-    Safely executes shell commands in a non-blocking way.
-    Runs commands in a separate process with a timeout.
+    Implements the Command Pattern's "Invoker".
+    It accepts Command objects, executes them, and keeps a history.
     """
     def __init__(self, locator):
         self.locator = locator
         self.events: EventDispatcher = self.locator.resolve("event_dispatcher")
+        self.config: ConfigLoader = self.locator.resolve("config_loader")
         self.logger = logging.getLogger(self.__class__.__name__)
+        
+        # --- NEW: Load config and init history ---
+        cmd_config = self.config.get_config("commands_config.json")
+        max_history = cmd_config.get("max_history", 50)
+        self.history = CommandHistory(max_size=max_history)
+        self.logger.info(f"CommandExecutor initialized with history size {max_history}")
 
-    async def execute(self, command: str, args: Optional[list] = None, timeout: int = 30) -> Tuple[bool, str]:
+    async def execute(self, command: BaseCommand) -> Tuple[bool, Any]:
         """
-        Executes a command in a subprocess with a timeout.
+        Executes a Command object.
         
         Args:
-            command (str): The command or program to run (e.g., "python", "ls").
-            args (list): A list of string arguments for the command (e.g., ["-m", "mcp_server"]).
-            timeout (int): Max seconds to let the command run.
+            command (BaseCommand): The command to execute.
 
         Returns:
-            Tuple[bool, str]: (is_success, output)
-            'output' will be stdout if successful, or stderr if failed.
+            Tuple[bool, Any]: (is_success, result)
+            'result' will be command.result if successful, or error string if failed.
         """
-        full_command = [command] + (args or [])
-        cmd_str = " ".join(full_command)
-        self.logger.info(f"Executing command: {cmd_str} with timeout {timeout}s")
+        command_name = command.__class__.__name__
+        self.logger.info(f"Executing command: {command_name}")
         
-        await self.events.publish("TOOL_EVENT.STARTED", command=cmd_str)
+        # Event publishing is now delegated to the command itself
+        # or the caller (e.g., mcp_integration)
         
         try:
-            # asyncio.create_subprocess_exec is the modern, async way to do this
-            proc = await asyncio.create_subprocess_exec(
-                *full_command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
-            )
-
-            # Wait for the process to terminate or timeout
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+            # --- MODIFIED: Delegate execution to command object ---
+            await command.execute()
             
-            stdout = stdout_bytes.decode('utf-8').strip()
-            stderr = stderr_bytes.decode('utf-8').strip()
-
-            if proc.returncode == 0:
-                self.logger.info(f"Command success: {cmd_str}")
-                await self.events.publish("TOOL_EVENT.OUTPUT", output=stdout)
-                await self.events.publish("TOOL_EVENT.COMPLETE", command=cmd_str, success=True, output=stdout)
-                return True, stdout
+            if command.executed:
+                self.logger.info(f"Command {command_name} success.")
+                self.history.push(command) # Add to history only if successful
+                return True, command.result
             else:
-                self.logger.error(f"Command failed (code {proc.returncode}): {cmd_str} | Error: {stderr}")
-                await self.events.publish("TOOL_EVENT.COMPLETE", command=cmd_str, success=False, output=stderr)
-                return False, stderr
+                self.logger.error(f"Command {command_name} failed during execution. Result: {command.result}")
+                return False, command.result
 
-        except asyncio.TimeoutError:
-            self.logger.error(f"Command timed out: {cmd_str}")
-            try:
-                proc.kill()
-            except ProcessLookupError:
-                pass # Process already finished
-            await self.events.publish("TOOL_EVENT.TIMEOUT", command=cmd_str)
-            return False, "Command timed out."
-        
-        except FileNotFoundError:
-            self.logger.error(f"Command not found: {command}")
-            await self.events.publish("TOOL_EVENT.COMPLETE", command=cmd_str, success=False, output="Command not found")
-            return False, f"Error: Command '{command}' not found. Is it in your PATH?"
-            
         except Exception as e:
             self.logger.error(f"Command execution error: {e}", exc_info=True)
-            await self.events.publish("TOOL_EVENT.COMPLETE", command=cmd_str, success=False, output=str(e))
             return False, f"An unexpected error occurred: {e}"
+
+    async def undo(self) -> bool:
+        """
+        Undoes the last executed command.
+        """
+        return await self.history.undo_last()

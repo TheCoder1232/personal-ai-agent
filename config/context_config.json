@@ -1,0 +1,5 @@
+{
+    "max_messages": 50,
+    "pruning_strategy": "fifo",
+    "summarize_threshold": 20
+}

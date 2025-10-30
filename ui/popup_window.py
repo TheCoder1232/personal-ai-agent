@@ -51,9 +51,10 @@ class UIConstants:
 
 class GridPosition(IntEnum):
     """Enum for grid layout positions"""
-    CHAT_HISTORY_ROW = 0
-    ATTACHMENT_ROW = 1
-    INPUT_ROW = 2
+    BRANCH_ROW = 0
+    CHAT_HISTORY_ROW = 1
+    ATTACHMENT_ROW = 2
+    INPUT_ROW = 3
     
     MAIN_COLUMN = 0
     CLEAR_BUTTON_COLUMN = 1
@@ -316,6 +317,8 @@ class PopupWindow(ctk.CTkToplevel):
         self.attributes("-topmost", True)
         
         # Grid configuration
+        # --- MODIFIED: Add BRANCH_ROW ---
+        self.grid_rowconfigure(GridPosition.BRANCH_ROW, weight=0) # For visualization
         self.grid_rowconfigure(GridPosition.CHAT_HISTORY_ROW, weight=1)
         self.grid_rowconfigure(GridPosition.ATTACHMENT_ROW, weight=0)
         self.grid_rowconfigure(GridPosition.INPUT_ROW, weight=0)
@@ -323,7 +326,7 @@ class PopupWindow(ctk.CTkToplevel):
         self.grid_columnconfigure(GridPosition.MAIN_COLUMN, weight=1)
         self.grid_columnconfigure(GridPosition.CLEAR_BUTTON_COLUMN, weight=0)
         self.grid_columnconfigure(GridPosition.SEND_BUTTON_COLUMN, weight=0)
-    
+
     def _get_theme_colors(self) -> Dict[str, str]:
         """Extract theme colors with fallbacks"""
         try:
@@ -346,10 +349,25 @@ class PopupWindow(ctk.CTkToplevel):
     
     def _setup_ui(self):
         """Setup all UI components"""
+        
+        # --- NEW: Branch visualization placeholder ---
+        self.branch_frame = ctk.CTkFrame(self, height=30, fg_color="transparent")
+        self.branch_frame.grid(
+            row=GridPosition.BRANCH_ROW,
+            column=GridPosition.MAIN_COLUMN,
+            columnspan=3,
+            sticky="ew",
+            padx=UIConstants.PADDING_SMALL,
+            pady=(UIConstants.PADDING_SMALL, 0)
+        )
+        self.branch_label = ctk.CTkLabel(self.branch_frame, text="Current Branch: main", text_color="gray")
+        self.branch_label.pack(side="left", padx=UIConstants.PADDING_SMALL)
+        # TODO: Add buttons or a dropdown here to switch branches
+        
         # Chat history frame
         self.chat_history_frame = ctk.CTkScrollableFrame(self)
         self.chat_history_frame.grid(
-            row=GridPosition.CHAT_HISTORY_ROW,
+            row=GridPosition.CHAT_HISTORY_ROW, # --- MODIFIED ---
             column=GridPosition.MAIN_COLUMN,
             columnspan=3,
             sticky="nsew",
@@ -394,7 +412,7 @@ class PopupWindow(ctk.CTkToplevel):
         # Input textbox
         self.input_entry = ctk.CTkTextbox(self, height=UIConstants.INPUT_MIN_HEIGHT)
         self.input_entry.grid(
-            row=GridPosition.INPUT_ROW,
+            row=GridPosition.INPUT_ROW, # --- MODIFIED ---
             column=GridPosition.MAIN_COLUMN,
             sticky="nsew",
             padx=(UIConstants.PADDING_SMALL, 0),
@@ -476,6 +494,7 @@ class PopupWindow(ctk.CTkToplevel):
         self.events.subscribe("API_EVENT.REQUEST_COMPLETE", self.on_request_complete)
         self.events.subscribe("PLUGIN_EVENT.SCREEN_CAPTURED", self.on_screen_attached)
         self.events.subscribe("AGENT_EVENT.CLEAR_CONTEXT", self.on_context_cleared_externally)
+        self.events.subscribe("CONTEXT_EVENT.BRANCH_CHANGED", self.on_branch_changed)
     
     def _on_key_release(self, event):
         """Handle key release events"""
@@ -793,7 +812,7 @@ class PopupWindow(ctk.CTkToplevel):
         
         # Show shortcuts hint
         self.shortcuts_label.grid(
-            row=GridPosition.INPUT_ROW + 1,
+            row=GridPosition.INPUT_ROW + 1, # --- MODIFIED ---
             column=0,
             columnspan=3,
             sticky="w",
@@ -802,8 +821,8 @@ class PopupWindow(ctk.CTkToplevel):
         )
         
         # Ensure grid is properly configured
-        self.grid_rowconfigure(GridPosition.INPUT_ROW + 1, weight=0)
-    
+        self.grid_rowconfigure(GridPosition.INPUT_ROW + 1, weight=0) # --- MODIFIED ---
+
     def hide(self):
         """Hide the popup window"""
         # Save geometry
@@ -815,3 +834,24 @@ class PopupWindow(ctk.CTkToplevel):
         
         self.withdraw()
         self.is_visible = False
+
+    def on_branch_changed(self, current_node_id: str):
+        """Updates the UI when the conversation branch changes."""
+        self.logger.debug(f"UI handling branch change to: {current_node_id}")
+        self.after(0, self._update_branch_label, current_node_id)
+    
+    def _update_branch_label(self, node_id: str):
+        """Helper to update label text from main thread."""
+        # Displaying the last 8 chars of the node ID
+        self.branch_label.configure(text=f"Current Branch: ...{node_id[-8:]}")
+        
+        # In a real implementation, this would trigger a full
+        # history reload from the context manager.
+        # For now, we'll just clear the UI.
+        self.clear_chat_ui()
+        self.append_to_history(f"<i>Switched to branch {node_id[-8:]}</i>")
+        
+        # TODO: Reload the history from the new branch
+        # full_history = self.agent.context_manager.get_full_history()
+        # for msg in full_history:
+        #    ... render msg ...

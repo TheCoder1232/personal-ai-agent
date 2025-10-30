@@ -10,6 +10,10 @@ from core.command_executor import CommandExecutor
 from utils.config_loader import ConfigLoader
 from typing import Dict, Any, Optional
 
+# --- NEW IMPORT ---
+from core.commands.tool_command import ToolCommand
+
+
 class MCPIntegrationPlugin(PluginBase):
     """
     Manages connections to MCP servers and executes tools.
@@ -135,15 +139,9 @@ class MCPIntegrationPlugin(PluginBase):
 
         self.logger.info(f"User approved tool call. Executing: {tool_name}")
         
-        # Execute the tool
-        # Note: This is a simplified execution. A real MCP client
-        # would use session.call_tool(). For simplicity with your plan's
-        # CommandExecutor, we are just re-launching the server process
-        # for each call. This is inefficient but robust.
-        
-        # A true MCP client would keep the session open.
-        # Let's pivot: We'll use the CommandExecutor to run the MCP
-        # server as a command-line tool, which is simpler.
+        # --- START: REFACTORED SECTION ---
+        # The logic is now moved to a Command object and executed
+        # by the CommandExecutor.
         
         tool_info = self.tool_registry.get(tool_name)
         if not tool_info:
@@ -154,18 +152,31 @@ class MCPIntegrationPlugin(PluginBase):
         server_id = tool_info["server_id"]
         server_config = self.servers.get(server_id)
         
-        # We need to format the tool call for the command line
-        # e.g., `python -m mcp_server_filesystem call read_file --path /tmp/foo.txt`
-        # This assumes MCP servers follow this CLI pattern.
+        if not server_config:
+            self.logger.error(f"Server config not found for server_id: {server_id}")
+            await self.events.publish("TOOL_EVENT.EXECUTION_COMPLETE", tool_name=tool_name, success=False, output=f"Error: Server config '{server_id}' not found.")
+            return
+
+        # 1. Create the command object
+        tool_command = ToolCommand(
+            tool_name=tool_name,
+            tool_args=call_details["args"],
+            server_config=server_config
+        )
+
+        # 2. Execute via the invoker
+        # The executor now handles running command.execute()
+        await self.events.publish("TOOL_EVENT.STARTED", command=f"MCP Tool: {tool_name}")
         
-        # For now, let's just log a "Not Implemented"
-        self.logger.error("MCP tool execution logic is not fully implemented yet.")
+        success, result = await self.executor.execute(tool_command)
+        
+        # 3. Publish final result
         await self.events.publish(
             "TOOL_EVENT.EXECUTION_COMPLETE", 
             tool_name=tool_name, 
-            success=False, 
-            output="Tool execution via CommandExecutor is not yet implemented."
+            success=success, 
+            output=str(result) # Ensure output is a string for UI
         )
         
-        # TODO: Implement full mcp.client.stdio_client logic here
-        # to call the tool, similar to _discover_server_tools.
+        if success:
+            await self.events.publish("TOOL_EVENT.OUTPUT", output=str(result))

@@ -1,6 +1,8 @@
 {
     "active_provider": "gemini",
     "active_model": "gemini-2.5-flash",
+    "fallback_provider": "ollama",
+    "fallback_model": "llama3:latest",
     "providers": {
         "gemini": {
             "api_key": "AIzaSyC0YkeRjpEu4RfWNXsZHnTSyYWye6EyjrA",

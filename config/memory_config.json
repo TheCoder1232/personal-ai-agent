@@ -1,0 +1,6 @@
+{
+  "monitor_interval_sec": 60,
+  "threshold_mb": 500,
+  "log_level": "INFO",
+  "enabled": true
+}

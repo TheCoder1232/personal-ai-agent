@@ -155,8 +155,10 @@ class PersonalAIAgentApp(ctk.CTk):
         event_dispatcher: EventDispatcher = self.locator.resolve("event_dispatcher")
 
         try:
-            await plugin_manager.load_plugins()
-            logger.info(f"Loaded {len(plugin_manager.loaded_plugins)} plugins.")
+            # --- MODIFIED ---
+            await plugin_manager.discover_and_load_plugins()
+            logger.info("Plugin discovery/load process complete.")
+            # --- END MODIFIED ---
         except Exception as e:
             logger.error(f"Failed to load plugins: {e}", exc_info=True)
             return
@@ -186,12 +188,12 @@ class PersonalAIAgentApp(ctk.CTk):
 def register_core_services(locator_instance: ServiceLocator):
     """Registers all non-async services in the service locator."""
     
-    # Register EventDispatcher as a singleton
-    locator_instance.register("event_dispatcher", EventDispatcher, singleton=True)
-    
     # Register ConfigLoader as a singleton
     config_path = Path(__file__).parent / "config"
     locator_instance.register("config_loader", lambda: ConfigLoader(config_path), singleton=True)
+    
+    # Register EventDispatcher as a singleton, now with its dependency
+    locator_instance.register("event_dispatcher", lambda: EventDispatcher(locator_instance.resolve("config_loader")), singleton=True)
     
     # Register PluginManager as a singleton.
     locator_instance.register("plugin_manager", lambda: PluginManager(locator_instance), singleton=True)
@@ -199,14 +201,14 @@ def register_core_services(locator_instance: ServiceLocator):
     # --- NEW FOR PHASE 3 ---
     
     # Register ApiManager
-    locator_instance.register("api_manager",  lambda: ApiManager(locator_instance), singleton=True)
+    locator_instance.register("api_manager", lambda: ApiManager(locator_instance), singleton=True)
     
     # Register ContextManager
     locator_instance.register("context_manager", lambda: ContextManager(locator_instance), singleton=True)
     
     # Register RoleSelector
     locator_instance.register("role_selector", lambda: RoleSelector(locator_instance), singleton=True)
-    
+
     # Register the Agent (which depends on the above)
     locator_instance.register("agent", lambda: Agent(locator_instance), singleton=True)
 
