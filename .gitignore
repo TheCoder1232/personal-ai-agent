@@ -3,3 +3,10 @@
 
 __pycache__/
 
+personal_ai_agent.egg-info
+
+analysis_report.json
+
+.vscode
+
+.pytest_cache

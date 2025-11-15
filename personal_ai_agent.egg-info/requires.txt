@@ -1,3 +1,4 @@
+aiofiles>=25.1.0
 beautifulsoup4>=4.14.2
 customtkinter>=5.2.2
 google-api-core>=2.26.0
@@ -7,6 +8,7 @@ markdown>=3.9
 mcp[cli]>=1.18.0
 mss>=10.1.0
 pillow>=10.4.0
+psutil>=7.1.2
 pynput>=1.8.1
 pystray>=0.19.5
 requests>=2.32.5
@@ -16,3 +18,4 @@ tkhtmlview>=0.3.1
 [dev]
 pytest>=8.3.2
 pytest-asyncio>=0.23.7
+toml>=0.10.2

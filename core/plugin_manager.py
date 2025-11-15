@@ -81,13 +81,16 @@ class PluginManager:
                             
                             # Store how to load it later
                             self._plugin_registry[plugin_id] = (file_path, name) # (file_path, class_name)
-                            self.logger.info(f"  -> Discovered '{plugin_id}'")
+                            self.logger.info(f"  -> Discovered and registered plugin id: '{plugin_id}' (module: {module_name}, class: {name})")
                             
                         except Exception as e:
                             self.logger.error(f"  -> FAILED to discover metadata for {name} from {file_path.name}: {e}", exc_info=True)
             
             except Exception as e:
                 self.logger.error(f"Error discovering module from {file_path.name}: {e}", exc_info=True)
+
+        # New: show all discovered plugin ids clearly
+        self.logger.info(f"Discovered plugins (by id): {list(self._plugin_registry.keys())}")
 
 
     async def discover_and_load_plugins(self):
@@ -99,9 +102,10 @@ class PluginManager:
             # Do nothing else; plugins will be loaded on-demand by get_plugin()
         else:
             # Eager loading: load all discovered plugins now
-            self.logger.info(f"Eager loading {len(self._plugin_registry)} discovered plugins...")
+            self.logger.info(f"Eager loading {len(self._plugin_registry)} discovered plugins: {list(self._plugin_registry.keys())}")
             for plugin_id in self._plugin_registry.keys():
                 try:
+                    self.logger.info(f"About to load plugin: '{plugin_id}'...")
                     await self.get_plugin(plugin_id) # This will force-load it
                 # --- MODIFIED: Catch our custom error ---
                 except PluginLoadError as e:
@@ -109,6 +113,8 @@ class PluginManager:
                     self.logger.error(f"Failed to eager-load plugin '{plugin_id}': {e}", exc_info=False) # Already logged
                 except Exception as e:
                     self.logger.error(f"Unexpected error eager-loading plugin '{plugin_id}': {e}", exc_info=True)
+            # After loading, log all loaded plugin ids
+            self.logger.info(f"Loaded plugins: {list(self._loaded_plugins.keys())}")
 
 
     async def _load_plugin(self, name: str) -> PluginBase:

@@ -4,8 +4,10 @@ core/agent.py
 core/api_manager.py
 core/command_executor.py
 core/context_manager.py
+core/error_analytics.py
 core/event_dispatcher.py
 core/exceptions.py
+core/memory_manager.py
 core/plugin_manager.py
 core/role_selector.py
 core/service_locator.py
@@ -23,10 +25,14 @@ tests/test_api_manager.py
 tests/test_config_loader.py
 tests/test_context_manager.py
 tests/test_event_dispatcher.py
+tests/test_logger.py
+tests/test_memory_manager.py
+tests/test_plugin_manager.py
 tests/test_screen_capture.py
 ui/notification.py
 ui/popup_window.py
 ui/settings_window.py
 ui/tray_manager.py
 utils/config_loader.py
+utils/error_reporter.py
 utils/logger.py

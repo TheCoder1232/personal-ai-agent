@@ -76,6 +76,16 @@ class ScreenCapturePlugin(PluginBase):
             self.logger.info(f"Screen captured and encoded (Base64 length: {len(encoded_image)}).")
             
             # 3. Emit event with image data for the agent
+            # await self.events.publish(
+            #     "PLUGIN_EVENT.SCREEN_CAPTURED", 
+            #     image_data=encoded_image,
+            #     format="base64"
+            # )
+            # await self.events.publish("UI_EVENT.OPEN_CHAT")
+
+            # Ensure chat window opens first, and can subscribe to SCREEN_CAPTURED
+            await self.events.publish("UI_EVENT.OPEN_CHAT")
+            await asyncio.sleep(0.1)  # allow UI to initialize and subscribe
             await self.events.publish(
                 "PLUGIN_EVENT.SCREEN_CAPTURED", 
                 image_data=encoded_image,
@@ -88,7 +98,6 @@ class ScreenCapturePlugin(PluginBase):
                 title="Screen Captured",
                 message="Screenshot attached. Opening chat..."
             )
-            await self.events.publish("UI_EVENT.OPEN_CHAT")
 
         except Exception as e:
             self.logger.error(f"Failed to capture screen: {e}", exc_info=True)

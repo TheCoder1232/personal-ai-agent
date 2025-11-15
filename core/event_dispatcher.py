@@ -1,6 +1,7 @@
 # file: core/event_dispatcher.py
 
 import asyncio
+from itertools import count
 from collections import defaultdict
 from typing import Callable, Any, Dict, List, Coroutine, Optional
 from utils.config_loader import ConfigLoader # Added import
@@ -24,6 +25,8 @@ class EventDispatcher:
         # The priority queue for events
         self._event_queue: asyncio.PriorityQueue = asyncio.PriorityQueue()
         self._dispatcher_task: Optional[asyncio.Task] = None
+        # Monotonic sequence to break ties in priority queue ordering
+        self._seq = count()
 
     def _get_priority(self, event_type: str) -> int:
         """
@@ -69,8 +72,10 @@ class EventDispatcher:
             **kwargs: Keyword arguments to pass to the listeners.
         """
         priority = self._get_priority(event_type)
-        # Item format: (priority, event_type, args, kwargs)
-        event_item = (priority, event_type, args, kwargs)
+        # Item format: (priority, seq, event_type, args, kwargs)
+        # The seq number guarantees total ordering without comparing dicts
+        seq = next(self._seq)
+        event_item = (priority, seq, event_type, args, kwargs)
         await self._event_queue.put(event_item)
 
     async def _execute_listeners(self, event_type: str, *args, **kwargs):
@@ -110,7 +115,7 @@ class EventDispatcher:
         try:
             while True:
                 # Get the highest-priority event (lowest number)
-                priority, event_type, args, kwargs = await self._event_queue.get()
+                priority, _seq, event_type, args, kwargs = await self._event_queue.get()
                 
                 try:
                     # Execute all listeners for this event

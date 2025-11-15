@@ -1,78 +1,77 @@
-# GEMINI.md
+# GEMINI.md: Project Context for the Personal AI Agent
+
+This document provides a comprehensive overview of the "Personal AI Agent" project, intended to be used as a foundational context for an AI assistant.
 
 ## Project Overview
 
-This project is a personal AI assistant that runs on your local machine. It's built with Python and features a plugin-based architecture, allowing for easy extension of its capabilities. The UI is built with CustomTkinter, and it supports multiple LLM providers through LiteLLM. The application runs in the system tray and can be controlled via global hotkeys.
+This is a Python-based personal AI assistant designed to run as a local desktop application. It features a plugin-based architecture, allowing for dynamic extension of its capabilities. The user interacts with the agent through a modern graphical user interface (GUI) built with CustomTkinter, which includes a system tray icon for easy access and a popup window for conversations.
 
-### Key Technologies
+The core of the application is event-driven and modular, using a service locator pattern for dependency injection and an event dispatcher for decoupled communication between components. This design promotes maintainability and extensibility.
 
-*   **Python**: The core programming language.
-*   **CustomTkinter**: For the graphical user interface.
-*   **LiteLLM**: To support various LLM providers like Gemini, Ollama, and OpenRouter.
-*   **Plugin Architecture**: For extensibility.
+Key technologies and libraries include:
+- **UI**: `customtkinter` for the main windows, `pystray` for the system tray icon, and `PIL` for image handling.
+- **AI/LLM**: `litellm` is used as a compatibility layer to seamlessly connect with various Large Language Model (LLM) providers like Google Gemini, OpenRouter, and others.
+- **Core Logic**: A custom event-driven framework with a service locator for managing dependencies.
+- **Plugins**: The application can be extended with plugins located in the `plugins/` directory. An example is the `screen_capture.py` plugin, which uses `mss` to take screenshots.
+- **Input**: `pynput` is used for managing global hotkeys.
+- **Packaging & Dependencies**: The project uses `pyproject.toml` to define dependencies, which can be managed by tools like `pip` or `uv`.
+- **Testing**: `pytest` and `pytest-asyncio` are used for unit and integration testing.
 
 ## Building and Running
 
-### 1. Setup
+### 1. Setup and Installation
 
-It is recommended to use a virtual environment.
+The project uses `uv` for environment and dependency management, as indicated by the `uv.lock` file and `pyproject.toml`.
 
+**Install dependencies:**
 ```bash
-# Create a virtual environment
-python -m venv .venv
-
-# Activate the virtual environment
-# On Windows
-.venv\Scripts\activate
-# On macOS/Linux
-source .venv/bin/activate
-```
-
-### 2. Install Dependencies
-
-The project uses `uv` to manage dependencies, as indicated by the `uv.lock` file.
-
-```bash
-# Install dependencies using uv
-uv pip install -r requirements.txt
-```
-
-If `requirements.txt` is not available, you can install the dependencies from `pyproject.toml`:
-
-```bash
+# Install main dependencies
 uv pip install -e .
+
+# Install development dependencies (including pytest)
+uv pip install -e ".[dev]"
 ```
 
-### 3. Configure API Keys
+### 2. Running the Application
 
-The application uses environment variables for API keys.
+The main entry point is `main.py`.
 
-**On Windows (Command Prompt):**
-
-```bash
-set GEMINI_API_KEY="your_google_ai_studio_key"
-set OPENROUTER_API_KEY="your_openrouter_key"
-```
-
-**On macOS/Linux:**
-
-```bash
-export GEMINI_API_KEY="your_google_ai_studio_key"
-export OPENROUTER_API_KEY="your_openrouter_key"
-```
-
-### 4. Run the Application
-
+**To run the application:**
 ```bash
 python main.py
 ```
+or using `uv`:
+```bash
+uv run main.py
+```
+The application will start in the background with an icon in the system tray.
 
-The application will start and an icon will appear in the system tray.
+### 3. Running Tests
+
+Tests are located in the `tests/` directory and are run using `pytest`.
+
+**To run the test suite:**
+```bash
+pytest
+```
 
 ## Development Conventions
 
-*   **Service Locator Pattern**: The project uses a service locator for dependency injection, which helps in decoupling components. Core services are registered in `main.py` and can be accessed globally.
-*   **Plugin-Based Architecture**: New features are added as plugins in the `plugins/` directory. Each plugin must inherit from a base class and implement the required methods.
-*   **Event-Driven Architecture**: The application uses an event dispatcher to communicate between different components. This allows for loose coupling and better separation of concerns.
-*   **Configuration**: All user-facing configurations are stored in JSON files in the `config/` directory.
-*   **Logging**: The application uses the `logging` module for logging. The logging is configured in `utils/logger.py`.
+- **Architecture**: The project is structured into distinct modules:
+    - `core/`: Core services like the `Agent`, `ApiManager`, `EventDispatcher`, and `ServiceLocator`.
+    - `ui/`: UI components, including `TrayManager` and `PopupWindow`.
+    - `plugins/`: Self-contained feature extensions.
+    - `utils/`: Utility classes like `ConfigLoader` and `logger`.
+    - `config/`: All user-facing JSON configuration files.
+    - `input/`: Global hotkey management.
+    - `tests/`: Automated tests.
+
+- **Dependency Management**: A `ServiceLocator` (`core/service_locator.py`) is used for dependency injection, promoting loose coupling between components. Services are registered in `main.py` and resolved where needed.
+
+- **Event-Driven Communication**: An `EventDispatcher` (`core/event_dispatcher.py`) facilitates communication between different parts of the application. Components can publish events and subscribe to events from other components without direct dependencies.
+
+- **Configuration**: Configuration is loaded from JSON files in the `config/` directory by the `ConfigLoader` utility. This allows for easy modification of settings without changing the code.
+
+- **Code Style**: The code adheres to standard Python conventions (PEP 8) and utilizes type hints for improved readability and static analysis.
+
+- **Plugin Development**: New features should be implemented as plugins. A new plugin requires creating a class that inherits from `PluginBase` and implementing the required methods. The `screen_capture.py` plugin serves as a good example.

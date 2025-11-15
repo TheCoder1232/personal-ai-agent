@@ -7,10 +7,8 @@ import customtkinter as ctk
 from pathlib import Path
 from typing import Optional
 
-# --- ADD THESE IMPORTS ---
 import os
 import sys
-# --- END ADD ---
 
 from core.service_locator import locator, ServiceLocator
 from core.command_executor import CommandExecutor
@@ -20,6 +18,11 @@ from core.api_manager import ApiManager
 from core.context_manager import ContextManager
 from core.role_selector import RoleSelector
 from core.agent import Agent
+# --- ADD THESE IMPORTS ---
+from core.error_analytics import ErrorAnalytics
+from utils.error_reporter import get_reporter, BaseErrorReporter
+# --- END ADD ---
+from core.memory_manager import MemoryManager
 
 from utils.config_loader import ConfigLoader
 from utils.logger import setup_logging
@@ -110,6 +113,7 @@ class PersonalAIAgentApp(ctk.CTk):
     def restart(self):
         """Sets a flag to restart and then quits the application."""
         # Set the flag so the main thread knows to restart
+        self.locator.resolve("logger").info("Restart requested by user.")
         self._restart_requested = True
         # Call quit() to gracefully shut down the main loop
         self.quit()
@@ -153,6 +157,12 @@ class PersonalAIAgentApp(ctk.CTk):
         # Get services that were registered in the main thread
         plugin_manager: PluginManager = self.locator.resolve("plugin_manager")
         event_dispatcher: EventDispatcher = self.locator.resolve("event_dispatcher")
+        memory_manager: MemoryManager = self.locator.resolve("memory_manager")
+
+        # NEW: Start the dispatcher loop so async events are processed
+        event_dispatcher.start()
+        # Start memory monitoring
+        memory_manager.start_monitoring()
 
         try:
             # --- MODIFIED ---
@@ -189,11 +199,17 @@ def register_core_services(locator_instance: ServiceLocator):
     """Registers all non-async services in the service locator."""
     
     # Register ConfigLoader as a singleton
-    config_path = Path(__file__).parent / "config"
-    locator_instance.register("config_loader", lambda: ConfigLoader(config_path), singleton=True)
+    # --- MODIFIED: Use a reliable path for configs ---
+    # Use platform-specific app data directory
+    app_data_dir = Path(os.getenv("APPDATA") or Path.home() / ".config" / "PersonalAIAgent") / "config"
+    locator_instance.register("config_loader", lambda: ConfigLoader(app_data_dir), singleton=True)
+    # --- END MODIFIED ---
     
     # Register EventDispatcher as a singleton, now with its dependency
     locator_instance.register("event_dispatcher", lambda: EventDispatcher(locator_instance.resolve("config_loader")), singleton=True)
+    
+    # Register MemoryManager as a singleton
+    locator_instance.register("memory_manager", lambda: MemoryManager(locator_instance), singleton=True)
     
     # Register PluginManager as a singleton.
     locator_instance.register("plugin_manager", lambda: PluginManager(locator_instance), singleton=True)
@@ -214,6 +230,31 @@ def register_core_services(locator_instance: ServiceLocator):
 
     # --- NEW FOR PHASE 4 ---
     locator_instance.register("command_executor", lambda: CommandExecutor(locator_instance), singleton=True)
+    
+    # --- ADDED: Error Analytics Services ---
+    # Register the reporter (factory function)
+    locator_instance.register(
+        "error_reporter", 
+        lambda: get_reporter(locator_instance.resolve("config_loader")), 
+        singleton=True
+    )
+    # Register the analytics service
+    locator_instance.register(
+        "error_analytics", 
+        lambda: ErrorAnalytics(
+            locator_instance.resolve("config_loader").get_config("error_analytics_config.json"),
+            locator_instance.resolve("error_reporter")
+        ), 
+        singleton=True
+    )
+    # --- END ADDED ---
+    
+    # --- ADDED: Register logger as a service ---
+    # This allows other services to log during initialization
+    # Note: We configure it *after* config is loaded, but register it here.
+    locator_instance.register("logger", lambda: logging.getLogger(), singleton=True)
+    # --- END ADDED ---
+
 
 if __name__ == "__main__":
     # 1. Register synchronous services first
@@ -222,7 +263,11 @@ if __name__ == "__main__":
     # 2. Load config and set up logging
     config_loader: ConfigLoader = locator.resolve("config_loader")
     config_loader.load_all_configs()
-    setup_logging(config_loader)
+    
+    # --- MODIFIED: Setup logging WITH analytics service ---
+    analytics_service: ErrorAnalytics = locator.resolve("error_analytics")
+    setup_logging(config_loader, analytics_service)
+    # --- END MODIFIED ---
     
     # --- NEW: Apply theme from config ---
     theme = config_loader.get("ui_config.json", "theme", "System")
@@ -245,13 +290,16 @@ if __name__ == "__main__":
     app.mainloop()
     
     logging.info("Application shutting down.")
-
+    args = ["uv", "run", "main.py"]
+    # --- MODIFIED: Robust Restart Logic ---
     if app._restart_requested:
         logging.info("Restart requested. Relaunching application...")
         try:
-            # Your command to restart using 'uv'
-            os.execvp('uv', ['uv', 'run', 'main.py'])
+            # Relaunch the script using the same executable and arguments
+            # This is more robust than hardcoding 'uv run main.py'
+            os.execvp(args[0], args)
         except Exception as e:
             logging.error(f"Failed to restart: {e}", exc_info=True)
     else:
         logging.info("Exiting normally.")
+    # --- END MODIFIED ---

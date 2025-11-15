@@ -113,10 +113,10 @@ class HTMLFormatter:
     def convert_md_to_html(self, md_content: str) -> str:
         """Convert markdown to HTML with safety"""
         try:
-            # Limit markdown extensions to prevent issues with HTMLLabel
+            # --- MODIFIED: Added 'nl2br' to match comment in create_message_html ---
             return markdown.markdown(
                 md_content, 
-                extensions=['fenced_code'],
+                extensions=['fenced_code', 'nl2br'],
                 output_format='html'
             )
         except Exception as e:
@@ -672,6 +672,16 @@ class PopupWindow(ctk.CTkToplevel):
     
     def _update_stream_display(self, content: str):
         """Update streaming display (batched)"""
+        
+        # --- NEW FIX ---
+        # Check if the stream has been completed by on_request_complete
+        # while this batched update was waiting in the queue.
+        with self.stream_lock:
+            if not self.stream_is_active:
+                self.ui_update_pending = False # We still clear the flag
+                return # Do NOT update the UI with this stale chunk
+        # --- END FIX ---
+
         self.ui_update_pending = False
         html_chunk = self.formatter.create_message_html("Agent", content)
         self.append_to_history(html_chunk, self.current_stream_id)
@@ -680,27 +690,42 @@ class PopupWindow(ctk.CTkToplevel):
         """Handle request completion"""
         with self.stream_lock:
             if not self.stream_is_active:
-                return
+                return # Already handled or cancelled
             
+            # This is the flag that the new fix in _update_stream_display
+            # will check.
             self.stream_is_active = False
-            already_streamed = bool(self.current_stream_content)
         
         # Re-enable UI
         self.after(0, self._set_ui_busy, False)
         
-        if already_streamed:
-            # Content already displayed via streaming
-            self.current_stream_content = ""
-            return
-        
-        # Non-streamed response - display now
-        self.logger.debug("Rendering non-streamed response")
+        # This part is crucial: always render the final, full_response
+        # to overwrite any partial chunks.
+        self.logger.debug("Rendering final complete response.")
         final_html = self.formatter.create_message_html("Agent", full_response)
+        
+        # Schedule the final update to run on the main thread
         self.after(0, self.append_to_history, final_html, self.current_stream_id)
-        self.current_stream_content = ""
+        
+        # Clear the temporary stream content
+        with self.stream_lock:
+            self.current_stream_content = ""
     
     def append_to_history(self, html_content: str, element_id: Optional[str] = None):
         """Append or update message in chat history"""
+        # Capture current scroll position before updating content
+        saved_top = 0.0
+        was_at_bottom = True
+        try:
+            canvas = self.chat_history_frame._parent_canvas
+            if canvas:
+                y0, y1 = canvas.yview()
+                saved_top = y0
+                # consider near-bottom if bottom edge is within 5%
+                was_at_bottom = y1 > 0.95 or (y0, y1) == (0.0, 1.0)
+        except Exception:
+            pass
+
         # Update or add message
         if element_id:
             updated = False
@@ -728,21 +753,40 @@ class PopupWindow(ctk.CTkToplevel):
         # Apply styles and render
         styled_html = self.formatter.apply_inline_styles(full_html_body)
         self.chat_history.set_html(styled_html)
-        
-        # Scroll to bottom with proper callback
-        self.after_idle(self._scroll_to_bottom)
+
+        # Restore scroll position (or keep at bottom if user was at bottom)
+        def _restore_scroll():
+            try:
+                canvas_local = self.chat_history_frame._parent_canvas
+                if not canvas_local:
+                    return
+                if was_at_bottom:
+                    canvas_local.yview_moveto(1.0)
+                else:
+                    canvas_local.yview_moveto(saved_top)
+            except Exception:
+                pass
+
+        self.after_idle(_restore_scroll)
     
     def _scroll_to_bottom(self):
-        """Scroll chat to bottom"""
+        """Scroll chat to bottom only if user is already at the bottom"""
+        # --- MODIFIED: Implemented smart scrolling ---
         try:
             self.chat_history_frame.update_idletasks()
             canvas = self.chat_history_frame._parent_canvas
             if canvas:
-                # scroll_pos = canvas.yview()
-                # is_at_bottom = scroll_pos[1] > 0.95
-                # if is_at_bottom:
-                #     canvas.yview_moveto(1.0)
-                canvas.yview_moveto(1.0)
+                scroll_pos = canvas.yview()
+                # scroll_pos[1] is the position of the bottom of the visible area
+                # (0.0 at top, 1.0 at bottom)
+                is_at_bottom = scroll_pos[1] > 0.95 
+                
+                # Handle case where canvas is not yet scrollable (e.g., empty)
+                if scroll_pos == (0.0, 1.0):
+                    is_at_bottom = True
+                    
+                if is_at_bottom:
+                    canvas.yview_moveto(1.0)
         except Exception as e:
             self.logger.debug(f"Scroll error: {e}")
     
@@ -841,17 +885,70 @@ class PopupWindow(ctk.CTkToplevel):
         self.after(0, self._update_branch_label, current_node_id)
     
     def _update_branch_label(self, node_id: str):
-        """Helper to update label text from main thread."""
-        # Displaying the last 8 chars of the node ID
+        """Helper to update label text and reload history from new branch."""
+        # --- MODIFIED: Implemented TODO logic ---
         self.branch_label.configure(text=f"Current Branch: ...{node_id[-8:]}")
+        self.logger.info(f"Reloading history for branch {node_id}")
         
-        # In a real implementation, this would trigger a full
-        # history reload from the context manager.
-        # For now, we'll just clear the UI.
+        # Clear UI completely first
         self.clear_chat_ui()
-        self.append_to_history(f"<i>Switched to branch {node_id[-8:]}</i>")
         
-        # TODO: Reload the history from the new branch
-        # full_history = self.agent.context_manager.get_full_history()
-        # for msg in full_history:
-        #    ... render msg ...
+        try:
+            # Logic based on the original TODO comment
+            if not hasattr(self.agent, 'context_manager') or \
+               not callable(getattr(self.agent.context_manager, 'get_full_history', None)):
+                self.logger.warning("Agent lacks 'context_manager.get_full_history' method.")
+                self.append_to_history(f"<i>Switched to branch {node_id[-8:]}. (History reload not supported)</i>")
+                return
+
+            # This assumes get_full_history() returns history for the *current* node
+            full_history = self.agent.context_manager.get_full_history() 
+            
+            if not full_history:
+                self.append_to_history(f"<i>Switched to new/empty branch {node_id[-8:]}</i>")
+                return
+
+            # Re-populate the chat_messages list
+            temp_messages = []
+            for message in full_history:
+                # Assuming format {'role': '...', 'content': '...'}
+                role = message.get('role')
+                content = message.get('content')
+                
+                if not role or content is None:
+                    self.logger.warning(f"Skipping malformed history message: {message}")
+                    continue
+                
+                if role == "system": # Don't show system messages
+                    continue
+                    
+                label = "Agent"
+                if role == "user":
+                    label = "You"
+                
+                message_html = self.formatter.create_message_html(label, content)
+                temp_messages.append({"id": None, "html": message_html})
+            
+            # Replace the (empty) chat_messages with the new history
+            self.chat_messages = temp_messages
+            
+            # Manually trigger a render (copying logic from append_to_history)
+            full_html_body = "<body>"
+            for msg in self.chat_messages:
+                wrapper_style = self.formatter.STYLE_WRAPPER
+                if msg.get("id"):
+                    full_html_body += f'<div id="{msg["id"]}" style="{wrapper_style}">{msg["html"]}</div>'
+                else:
+                    full_html_body += f'<div style="{wrapper_style}">{msg["html"]}</div>'
+            full_html_body += "</body>"
+            styled_html = self.formatter.apply_inline_styles(full_html_body)
+            self.chat_history.set_html(styled_html)
+            self.after_idle(self._scroll_to_bottom)
+
+            # Add a final status message
+            self.append_to_history(f"<i>Reloaded branch {node_id[-8:]}</i>")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to reload history for branch {node_id}: {e}")
+            self.clear_chat_ui() # Clear again on failure
+            self._show_error(f"Failed to reload history: {e}")

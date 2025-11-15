@@ -1,0 +1,12 @@
+{
+  "enabled": true,
+  "pattern_analysis": {
+    "threshold_count": 5,
+    "threshold_timespan_seconds": 3600,
+    "report_cooldown_seconds": 86400
+  },
+  "reporting": {
+    "type": "json_file",
+    "output_directory": "reports/errors"
+  }
+}

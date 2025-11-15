@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "aiofiles>=25.1.0",
     "beautifulsoup4>=4.14.2",
     "customtkinter>=5.2.2",
     "google-api-core>=2.26.0",
@@ -29,4 +30,12 @@ packages = ["core", "utils", "ui", "plugins", "input"]
 dev = [
     "pytest>=8.3.2",
     "pytest-asyncio>=0.23.7",
+    "toml>=0.10.2",
 ]
+
+[tool.analyzer]
+exclude_dirs = [".git", "__pycache__", ".pytest_cache", "venv", ".venv", "node_modules", "build", "dist"]
+file_length_threshold = 500
+complexity_threshold_medium = 15
+complexity_threshold_high = 20
+class_count_threshold = 4

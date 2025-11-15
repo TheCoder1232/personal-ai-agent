@@ -1,5 +1,5 @@
 {
-    "lazy_load_plugins": true,
+    "lazy_load_plugins": false,
     "hotkeys": {
         "open_chat": "<ctrl>+<shift>+<space>",
         "screen_capture": "<ctrl>+<shift>+x"
