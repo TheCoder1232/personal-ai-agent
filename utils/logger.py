@@ -110,18 +110,20 @@ def setup_logging(config_loader: ConfigLoader, analytics_service: Optional[Error
     memory_filter = MemoryLogFilter()
     
     # --- Console Handler ---
-    if not any(isinstance(h, logging.StreamHandler) for h in logger.handlers):
+    if not any(h.get_name() == "app_console_handler" for h in logger.handlers):
         console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.set_name("app_console_handler")
         console_handler.setLevel(log_level)
         console_handler.setFormatter(log_format)
         console_handler.addFilter(memory_filter) 
         logger.addHandler(console_handler)
     
     # --- Rotating File Handler ---
-    if not any(isinstance(h, RotatingFileHandler) for h in logger.handlers):
+    if not any(h.get_name() == "app_file_handler" for h in logger.handlers):
         file_handler = RotatingFileHandler(
             log_file, maxBytes=5*1024*1024, backupCount=5, encoding='utf-8'
         )
+        file_handler.set_name("app_file_handler")
         file_handler.setLevel(log_level)
         file_handler.setFormatter(log_format)
         file_handler.addFilter(memory_filter) 

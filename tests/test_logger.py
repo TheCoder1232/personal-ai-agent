@@ -4,14 +4,17 @@ import logging
 import pytest
 from unittest.mock import MagicMock, patch
 from utils.logger import setup_logging, MemoryLogFilter
+from pathlib import Path
 
 # Mock the ConfigLoader for setup_logging
 @pytest.fixture
-def mock_config_loader():
+def mock_config_loader(tmp_path: Path):
     loader = MagicMock()
     loader.get_config.return_value = {
         "logging": {"level": "DEBUG", "save_conversations": False}
     }
+    # Configure get_data_dir to return the temporary test directory
+    loader.get_data_dir.return_value = tmp_path
     return loader
 
 # Fixture to ensure logging is reset for each test
@@ -44,20 +47,34 @@ def test_memory_log_filter_injects_memory_info():
 def test_setup_logging_configures_memory_filter_and_format(mock_config_loader, caplog):
     """Test that setup_logging correctly applies the MemoryLogFilter and format."""
     caplog.set_level(logging.DEBUG)
+    
     setup_logging(mock_config_loader)
 
+    root_logger = logging.getLogger()
+    
+    app_handlers = [
+        h for h in root_logger.handlers 
+        if h.get_name() in ["app_console_handler", "app_file_handler"]
+    ]
+    
+    assert len(app_handlers) == 2, f"Expected 2 app handlers, found {len(app_handlers)}"
+    
+    # Check that both app handlers have the filter
+    for handler in app_handlers:
+        assert any(isinstance(f, MemoryLogFilter) for f in handler.filters)
+
+    # *** FIX: Apply the application's formatter to the caplog handler ***
+    # This ensures the captured output is formatted correctly for the assertion.
+    if app_handlers:
+        app_formatter = app_handlers[0].formatter
+        caplog.handler.setFormatter(app_formatter)
+        # The filter must also be added to the caplog handler for the formatter to work
+        if not any(isinstance(f, MemoryLogFilter) for f in caplog.handler.filters):
+            caplog.handler.addFilter(MemoryLogFilter())
+
+    # Log a message and check the output format from caplog
     logger = logging.getLogger("test_logger")
     logger.debug("This is a test log message.")
-
-    # Manually add MemoryLogFilter if missing (caplog.handler is a single handler)
-    from utils.logger import MemoryLogFilter
-    if not any(isinstance(f, MemoryLogFilter) for f in caplog.handler.filters):
-        caplog.handler.addFilter(MemoryLogFilter())
-
-    logger.debug("Test with memory filter.")
-
-    # caplog.text contains the formatted log output
+    
     assert "[100.0MB]" in caplog.text
-    assert "This is a test log message." in caplog.text or "Test with memory filter." in caplog.text
-    # Verify that the MemoryLogFilter is attached to the caplog handler
-    assert any(isinstance(f, MemoryLogFilter) for f in caplog.handler.filters)
+    assert "This is a test log message." in caplog.text

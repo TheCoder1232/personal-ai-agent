@@ -27,18 +27,27 @@ class FailingPlugin(PluginBase):
 
 @pytest.fixture
 def mock_service_locator():
-    """Fixture for a mock ServiceLocator."""
+    """
+    Fixture for a mock ServiceLocator that returns consistent mock instances.
+    """
     locator = MagicMock()
     
-    # Provide mocks for all services the PluginManager depends on
+    # Create stable mocks for each service
     mock_config_loader = MagicMock()
-    mock_config_loader.get.return_value = True # lazy_load_enabled = True
+    mock_config_loader.get.return_value = True  # lazy_load_enabled = True
     
-    locator.resolve.side_effect = lambda service: {
-        "event_dispatcher": AsyncMock(),
-        "memory_manager": MagicMock(),
+    mock_event_dispatcher = AsyncMock()
+    mock_memory_manager = MagicMock()
+
+    # Store mocks in a dictionary
+    services = {
+        "event_dispatcher": mock_event_dispatcher,
+        "memory_manager": mock_memory_manager,
         "config_loader": mock_config_loader
-    }.get(service)
+    }
+
+    # The side_effect now returns the same mock instance for a given service name
+    locator.resolve.side_effect = lambda service: services.get(service)
     
     return locator
 

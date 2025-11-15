@@ -27,7 +27,8 @@ class ScreenCapturePlugin(PluginBase):
         return {
             "name": "ScreenCapture",
             "version": "1.0.0",
-            "description": "Captures the screen on command."
+            "description": "Captures the screen on command.",
+            "eager_load": True
         }
 
     def initialize(self):
@@ -93,11 +94,11 @@ class ScreenCapturePlugin(PluginBase):
             )
             
             # 4. Notify user and open chat
-            await self.events.publish(
-                "NOTIFICATION_EVENT.INFO",
-                title="Screen Captured",
-                message="Screenshot attached. Opening chat..."
-            )
+            # await self.events.publish(
+            #     "NOTIFICATION_EVENT.INFO",
+            #     title="Screen Captured",
+            #     message="Screenshot attached. Opening chat..."
+            # )
 
         except Exception as e:
             self.logger.error(f"Failed to capture screen: {e}", exc_info=True)

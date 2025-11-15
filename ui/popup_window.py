@@ -7,236 +7,11 @@ from tkhtmlview import HTMLLabel
 from core.service_locator import locator
 from core.event_dispatcher import EventDispatcher
 from core.agent import Agent
-import markdown
 import threading
-import html
-from typing import Optional, Dict, Any
-from enum import IntEnum
+from typing import Optional, Dict
 from utils.config_loader import ConfigLoader
-
-try:
-    from bs4 import BeautifulSoup
-    BS_AVAILABLE = True
-except ImportError:
-    print("WARNING: BeautifulSoup4 not found. Inline styles will be limited. Install: pip install beautifulsoup4")
-    BeautifulSoup = None
-    BS_AVAILABLE = False
-
-
-# UI Constants
-class UIConstants:
-    """Central location for all magic numbers and dimensions"""
-    # Input textbox dimensions
-    INPUT_MIN_HEIGHT = 60
-    INPUT_MAX_HEIGHT = 200
-    INPUT_LINE_HEIGHT = 20
-    
-    # Button dimensions
-    BUTTON_WIDTH = 60
-    
-    # Padding and spacing
-    PADDING_SMALL = 5
-    PADDING_MEDIUM = 10
-    
-    # Message limits
-    MAX_MESSAGE_LENGTH = 10000
-    
-    # Timing
-    SCROLL_DELAY_MS = 10  # Reduced from 50ms
-    UI_UPDATE_BATCH_MS = 100  # Batch UI updates
-    
-    # Window geometry
-    DEFAULT_GEOMETRY = "400x600"
-
-
-class GridPosition(IntEnum):
-    """Enum for grid layout positions"""
-    BRANCH_ROW = 0
-    CHAT_HISTORY_ROW = 1
-    ATTACHMENT_ROW = 2
-    INPUT_ROW = 3
-    
-    MAIN_COLUMN = 0
-    CLEAR_BUTTON_COLUMN = 1
-    SEND_BUTTON_COLUMN = 2
-
-
-class HTMLFormatter:
-    """Separate class for HTML/CSS formatting logic"""
-    
-    def __init__(self, theme_colors: Dict[str, str]):
-        self.colors = theme_colors
-        self._style_cache = {}
-        self._setup_styles()
-    
-    def _setup_styles(self):
-        """Initialize all CSS styles"""
-        self.STYLE_WRAPPER = "margin-bottom: 10px;"
-        self.STYLE_P = "margin: 0; padding: 0;"
-        self.STYLE_B_LABEL = f"color: {self.colors['text']}; font-weight: bold;"
-        self.STYLE_STRONG_EMPHASIS = f"color: {self.colors['link']}; font-weight: bold;"
-        
-        self.STYLE_PRE = (
-            f"background-color: {self.colors['code_bg']}; "
-            f"color: {self.colors['text']}; "
-            f"padding: 10px; "
-            f"border-radius: 5px; "
-            f"font-family: 'Courier New', Courier, monospace; "
-            f"white-space: pre-wrap; "
-            f"word-wrap: break-word; "
-            f"overflow-x: auto;"
-        )
-        
-        self.STYLE_CODE = (
-            f"background-color: {self.colors['inline_bg']}; "
-            f"color: {self.colors['text']}; "
-            f"padding: 2px 4px; "
-            f"border-radius: 3px; "
-            f"font-family: 'Courier New', Courier, monospace;"
-        )
-        
-        self.STYLE_I = "color: #999999; font-style: italic;"
-        self.STYLE_ERROR = "color: #FF4444; font-weight: bold;"
-
-        # Header styles (using 'em' for relative sizing)
-        self.STYLE_H1 = f"font-size: 2em; font-weight: bold; color: {self.colors['text']}; margin: 0.67em 0;"
-        self.STYLE_H2 = f"font-size: 1.5em; font-weight: bold; color: {self.colors['text']}; margin: 0.83em 0;"
-        self.STYLE_H3 = f"font-size: 1.17em; font-weight: bold; color: {self.colors['text']}; margin: 1em 0;"
-        self.STYLE_H4 = f"font-size: 1em; font-weight: bold; color: {self.colors['text']}; margin: 1.33em 0;"
-        self.STYLE_H5 = f"font-size: 0.83em; font-weight: bold; color: {self.colors['text']}; margin: 1.67em 0;"
-        self.STYLE_H6 = f"font-size: 0.67em; font-weight: bold; color: {self.colors['text']}; margin: 2.33em 0;"
-        
-        # List styles
-        self.STYLE_UL_OL = "margin-left: 25px; padding-left: 5px;"
-        self.STYLE_LI = "margin-bottom: 5px;"
-    
-    def convert_md_to_html(self, md_content: str) -> str:
-        """Convert markdown to HTML with safety"""
-        try:
-            # --- MODIFIED: Added 'nl2br' to match comment in create_message_html ---
-            return markdown.markdown(
-                md_content, 
-                extensions=['fenced_code', 'nl2br'],
-                output_format='html'
-            )
-        except Exception as e:
-            logging.getLogger(__name__).error(f"Markdown conversion error: {e}")
-            return html.escape(md_content).replace('\n', '<br>')
-    
-    def sanitize_input(self, text: str) -> str:
-        """Sanitize user input to prevent XSS"""
-        # Escape HTML entities
-        sanitized = html.escape(text)
-        # Preserve newlines for display
-        return sanitized.replace('\n', '<br>')
-    
-    def apply_inline_styles(self, html_content: str) -> str:
-        """Apply inline CSS styles to HTML with caching"""
-        if not BS_AVAILABLE:
-            return html_content
-        
-        # Check cache
-        content_hash = hash(html_content)
-        if content_hash in self._style_cache:
-            return self._style_cache[content_hash]
-        
-        try:
-            # Ensure BeautifulSoup is present (guards static type checkers and runtime)
-            if BeautifulSoup is None:
-                return html_content
-            soup = BeautifulSoup(html_content, 'html.parser')
-            
-            # Apply styles only to unstyled elements
-            for tag in soup.find_all('b'):
-                if not tag.get('style'): 
-                    tag['style'] = self.STYLE_B_LABEL
-                    
-            for tag in soup.find_all('strong'):
-                if not tag.get('style'): 
-                    tag['style'] = self.STYLE_STRONG_EMPHASIS
-                    
-            for tag in soup.find_all('p'):
-                if not tag.get('style'): 
-                    tag['style'] = self.STYLE_P
-                    
-            for tag in soup.find_all('pre'):
-                if not tag.get('style'): 
-                    tag['style'] = self.STYLE_PRE
-                code_tag = tag.find('code')
-                if code_tag and not code_tag.get('style'):
-                    code_tag['style'] = "font-family: 'Courier New', Courier, monospace;"
-                    
-            for tag in soup.find_all('code'):
-                if not tag.find_parent('pre') and not tag.get('style'):
-                    tag['style'] = self.STYLE_CODE
-                    
-            for tag in soup.find_all('i'):
-                if not tag.get('style'): 
-                    tag['style'] = self.STYLE_I
-
-            # Apply header styles
-            for tag in soup.find_all('h1'):
-                if not tag.get('style'): tag['style'] = self.STYLE_H1
-            for tag in soup.find_all('h2'):
-                if not tag.get('style'): tag['style'] = self.STYLE_H2
-            for tag in soup.find_all('h3'):
-                if not tag.get('style'): tag['style'] = self.STYLE_H3
-            for tag in soup.find_all('h4'):
-                if not tag.get('style'): tag['style'] = self.STYLE_H4
-            for tag in soup.find_all('h5'):
-                if not tag.get('style'): tag['style'] = self.STYLE_H5
-            for tag in soup.find_all('h6'):
-                if not tag.get('style'): tag['style'] = self.STYLE_H6
-            
-            # Apply list styles
-            for tag in soup.find_all(['ul', 'ol']):
-                if not tag.get('style'):
-                    tag['style'] = self.STYLE_UL_OL
-            
-            for tag in soup.find_all('li'):
-                if not tag.get('style'):
-                    tag['style'] = self.STYLE_LI
-            
-            styled = str(soup)
-            
-            # Cache result (limit cache size)
-            if len(self._style_cache) > 50:
-                self._style_cache.clear()
-            self._style_cache[content_hash] = styled
-            
-            return styled
-            
-        except Exception as e:
-            logging.getLogger(__name__).error(f"Error applying inline styles: {e}")
-            return html_content
-    
-    # file: ui/popup_window.py
-# (inside class HTMLFormatter)
-
-    def create_message_html(self, label: str, content: str, is_error: bool = False) -> str:
-        """Create formatted message HTML"""
-        
-        # 1. Create the label
-        label_html = f"<b>{html.escape(label)}:</b>"
-        
-        # 2. Process the content
-        processed_content: str
-        if label == "You":
-            # User input: Sanitize it to prevent XSS and preserve newlines
-            processed_content = self.sanitize_input(content)
-        elif is_error:
-            # Error message: Sanitize, preserve newlines, and style as error
-            sanitized_content = self.sanitize_input(content)
-            processed_content = f"<span style='{self.STYLE_ERROR}'>{sanitized_content}</span>"
-        else:
-            # Agent/System output: Assume it's Markdown and convert it
-            # convert_md_to_html already handles newlines with 'nl2br' extension
-            processed_content = self.convert_md_to_html(content)
-            
-        # 3. Combine them with <br> tags for separation
-        # We are not running the combined string through markdown parser again
-        return f"{label_html}<br><br>{processed_content}"
-
+from .ui_utils import UIConstants, GridPosition
+from .html_formatter import HTMLFormatter
 
 class PopupWindow(ctk.CTkToplevel):
     """Main popup window for AI agent interaction"""
@@ -754,20 +529,8 @@ class PopupWindow(ctk.CTkToplevel):
         styled_html = self.formatter.apply_inline_styles(full_html_body)
         self.chat_history.set_html(styled_html)
 
-        # Restore scroll position (or keep at bottom if user was at bottom)
-        def _restore_scroll():
-            try:
-                canvas_local = self.chat_history_frame._parent_canvas
-                if not canvas_local:
-                    return
-                if was_at_bottom:
-                    canvas_local.yview_moveto(1.0)
-                else:
-                    canvas_local.yview_moveto(saved_top)
-            except Exception:
-                pass
-
-        self.after_idle(_restore_scroll)
+        # Always scroll to the bottom after a delay
+        self.after(100, self._force_scroll_to_bottom)
     
     def _scroll_to_bottom(self):
         """Scroll chat to bottom only if user is already at the bottom"""
@@ -789,6 +552,16 @@ class PopupWindow(ctk.CTkToplevel):
                     canvas.yview_moveto(1.0)
         except Exception as e:
             self.logger.debug(f"Scroll error: {e}")
+
+    def _force_scroll_to_bottom(self):
+        """Forces the chat to scroll to the bottom."""
+        try:
+            self.chat_history_frame.update_idletasks()
+            canvas = self.chat_history_frame._parent_canvas
+            if canvas:
+                canvas.yview_moveto(1.0)
+        except Exception as e:
+            self.logger.debug(f"Force scroll to bottom error: {e}")
     
     def on_new_chat(self, event=None):
         """Start a new chat session"""

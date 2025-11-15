@@ -80,7 +80,7 @@ class PluginManager:
                             plugin_id = metadata.get("name", module_name)
                             
                             # Store how to load it later
-                            self._plugin_registry[plugin_id] = (file_path, name) # (file_path, class_name)
+                            self._plugin_registry[plugin_id] = (file_path, name, metadata) # (file_path, class_name, metadata)
                             self.logger.info(f"  -> Discovered and registered plugin id: '{plugin_id}' (module: {module_name}, class: {name})")
                             
                         except Exception as e:
@@ -99,7 +99,21 @@ class PluginManager:
         """
         if self.lazy_load_enabled:
             self.logger.info(f"Lazy loading enabled. {len(self._plugin_registry)} plugins discovered.")
-            # Do nothing else; plugins will be loaded on-demand by get_plugin()
+            self.logger.info("Checking for plugins that require eager loading...")
+            eager_load_plugins = []
+            for plugin_id, (_, _, metadata) in self._plugin_registry.items():
+                if metadata.get("eager_load"):
+                    eager_load_plugins.append(plugin_id)
+            
+            if eager_load_plugins:
+                self.logger.info(f"Eager loading {len(eager_load_plugins)} plugins: {eager_load_plugins}")
+                for plugin_id in eager_load_plugins:
+                    try:
+                        await self.get_plugin(plugin_id)
+                    except PluginLoadError as e:
+                        self.logger.error(f"Failed to eager-load plugin '{plugin_id}': {e}", exc_info=False)
+                    except Exception as e:
+                        self.logger.error(f"Unexpected error eager-loading plugin '{plugin_id}': {e}", exc_info=True)
         else:
             # Eager loading: load all discovered plugins now
             self.logger.info(f"Eager loading {len(self._plugin_registry)} discovered plugins: {list(self._plugin_registry.keys())}")
@@ -125,7 +139,7 @@ class PluginManager:
             # --- MODIFIED: Raise custom exception ---
             raise PluginLoadError(f"Plugin '{name}' not found in registry. It was not discovered.")
 
-        file_path, class_name = self._plugin_registry[name]
+        file_path, class_name, _ = self._plugin_registry[name]
         self.logger.debug(f"Loading '{name}' from {file_path.name} (class: {class_name})")
         
         try:

@@ -160,7 +160,7 @@ class PersonalAIAgentApp(ctk.CTk):
         memory_manager: MemoryManager = self.locator.resolve("memory_manager")
 
         # NEW: Start the dispatcher loop so async events are processed
-        event_dispatcher.start()
+        await event_dispatcher.start()
         # Start memory monitoring
         memory_manager.start_monitoring()
 

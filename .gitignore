@@ -10,3 +10,5 @@ analysis_report.json
 .vscode
 
 .pytest_cache
+
+GEMINI.md

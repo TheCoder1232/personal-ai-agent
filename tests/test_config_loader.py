@@ -65,8 +65,10 @@ def test_load_config_handles_json_decode_error(config_loader, temp_config_dir):
     
     # Should return default data
     assert loaded_config == default_data
-    # Should have created a backup
-    assert (temp_config_dir / f"{filename}.bak").exists()
+    
+    # Should have created a backup file
+    backup_files = list(temp_config_dir.glob(f"{filename}.*.bak"))
+    assert len(backup_files) == 1, f"Expected 1 backup file, but found {len(backup_files)}"
 
 def test_save_config_raises_configuration_error_on_io_error(config_loader):
     """Tests that save_config raises ConfigurationError on file write failure."""

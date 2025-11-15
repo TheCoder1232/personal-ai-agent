@@ -132,7 +132,7 @@ class EventDispatcher:
         except Exception as e:
             print(f"Event dispatcher loop crashed: {e}")
 
-    def start(self):
+    async def start(self):
         """Starts the background event processing loop."""
         if self._dispatcher_task is None or self._dispatcher_task.done():
             self._dispatcher_task = asyncio.create_task(self._dispatcher_loop())

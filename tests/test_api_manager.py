@@ -44,7 +44,7 @@ def test_chat_stream_fallback_on_rate_limit(mock_completion_with_retry, api_mana
     mock_chunk = MagicMock()
     mock_chunk.choices[0].delta.content = "Fallback response"
     mock_completion_with_retry.side_effect = [
-        litellm_exceptions.RateLimitError(message="Rate limit exceeded", response=MagicMock(), llm_provider="test_provider", model="test_model"),
+        APIRateLimitError("Rate limit exceeded"),
         iter([mock_chunk])
     ]
     response = list(api_manager.chat_stream([], "system prompt"))
