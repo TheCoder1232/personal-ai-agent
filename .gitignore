@@ -12,3 +12,5 @@ analysis_report.json
 .pytest_cache
 
 GEMINI.md
+
+models_config.json
