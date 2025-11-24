@@ -145,27 +145,15 @@ class SettingsWindow(ctk.CTkToplevel):
         return ModelsTab(parent, self.locator, self.active_model_var, self.manage_provider_var, self.staged_model_lists, self._mark_dirty)
 
     def _create_api_keys_tab(self, parent):
-        key_entries = {
-            'gemini': ctk.CTkEntry(parent, show="*", placeholder_text="Set as GEMINI_API_KEY env var"),
-            'openrouter': ctk.CTkEntry(parent, show="*", placeholder_text="Set as OPENROUTER_API_KEY env var"),
-            'ollama': ctk.CTkEntry(parent)
-        }
         test_model_vars = {
             'gemini': self.gemini_test_model_var,
             'openrouter': self.openrouter_test_model_var,
             'ollama': self.ollama_test_model_var
         }
-        status_labels = {
-            'gemini': ctk.CTkLabel(parent, text="●", text_color="gray", font=ctk.CTkFont(size=20)),
-            'openrouter': ctk.CTkLabel(parent, text="●", text_color="gray", font=ctk.CTkFont(size=20)),
-            'ollama': ctk.CTkLabel(parent, text="●", text_color="gray", font=ctk.CTkFont(size=20))
-        }
-        return ApiKeysTab(parent, key_entries, test_model_vars, status_labels, self.test_connection, self._mark_dirty)
+        return ApiKeysTab(parent, test_model_vars, self.test_connection, self._mark_dirty)
 
     def _create_hotkeys_tab(self, parent):
-        chat_entry = ctk.CTkEntry(parent)
-        screen_entry = ctk.CTkEntry(parent)
-        return HotkeysTab(parent, chat_entry, screen_entry, self._mark_dirty)
+        return HotkeysTab(parent, self._mark_dirty)
 
     def _create_plugins_tab(self, parent):
         return PluginsTab(parent, self.plugin_screencapture_enabled_var, self._mark_dirty)
@@ -242,10 +230,10 @@ class SettingsWindow(ctk.CTkToplevel):
 
         # Hotkeys
         hotkeys_tab = self.content_frames["Hotkeys"]
-        hotkeys_tab.children['!ctkentry'].delete(0, "end")
-        hotkeys_tab.children['!ctkentry'].insert(0, system_config.get("hotkeys", {}).get("open_chat", "<ctrl>+<shift>+<space>"))
-        hotkeys_tab.children['!ctkentry2'].delete(0, "end")
-        hotkeys_tab.children['!ctkentry2'].insert(0, system_config.get("hotkeys", {}).get("screen_capture", "<ctrl>+<shift>+x"))
+        hotkeys_tab.chat_hotkey_entry.delete(0, "end")
+        hotkeys_tab.chat_hotkey_entry.insert(0, system_config.get("hotkeys", {}).get("open_chat", "<ctrl>+<shift>+<space>"))
+        hotkeys_tab.screen_hotkey_entry.delete(0, "end")
+        hotkeys_tab.screen_hotkey_entry.insert(0, system_config.get("hotkeys", {}).get("screen_capture", "<ctrl>+<shift>+x"))
 
         # Plugins
         plugin_config = system_config.get("plugins", {}).get("ScreenCapture", {})
@@ -287,8 +275,8 @@ class SettingsWindow(ctk.CTkToplevel):
         
         # System
         hotkeys_tab = self.content_frames["Hotkeys"]
-        system_config["hotkeys"]["open_chat"] = hotkeys_tab.children['!ctkentry'].get()
-        system_config["hotkeys"]["screen_capture"] = hotkeys_tab.children['!ctkentry2'].get()
+        system_config["hotkeys"]["open_chat"] = hotkeys_tab.chat_hotkey_entry.get()
+        system_config["hotkeys"]["screen_capture"] = hotkeys_tab.screen_hotkey_entry.get()
         system_config.setdefault("plugins", {}).setdefault("ScreenCapture", {})
         system_config["plugins"]["ScreenCapture"]["enabled"] = (self.plugin_screencapture_enabled_var.get() == "on")
         self.config.save_config("system_config.json", system_config)

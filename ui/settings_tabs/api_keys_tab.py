@@ -3,23 +3,24 @@ import customtkinter as ctk
 
 class ApiKeysTab(ctk.CTkFrame):
     """Tab for managing API keys and connection testing."""
-    def __init__(self, master, key_entries, test_model_vars, status_labels, test_connection_callback, mark_dirty_callback, **kwargs):
+    def __init__(self, master, test_model_vars, test_connection_callback, mark_dirty_callback, **kwargs):
         super().__init__(master, fg_color="transparent", **kwargs)
 
         self.grid_columnconfigure(1, weight=1)
 
-        # Unpack dictionaries
-        self.gemini_key_entry = key_entries['gemini']
-        self.openrouter_key_entry = key_entries['openrouter']
-        self.ollama_url_entry = key_entries['ollama']
-
+        # Store test model variables
         self.gemini_test_model_var = test_model_vars['gemini']
         self.openrouter_test_model_var = test_model_vars['openrouter']
         self.ollama_test_model_var = test_model_vars['ollama']
 
-        self.gemini_status = status_labels['gemini']
-        self.openrouter_status = status_labels['openrouter']
-        self.ollama_status = status_labels['ollama']
+        # Create entry widgets and status labels inside this tab
+        self.gemini_key_entry = ctk.CTkEntry(self, show="*", placeholder_text="Set as GEMINI_API_KEY env var")
+        self.openrouter_key_entry = ctk.CTkEntry(self, show="*", placeholder_text="Set as OPENROUTER_API_KEY env var")
+        self.ollama_url_entry = ctk.CTkEntry(self)
+
+        self.gemini_status = ctk.CTkLabel(self, text="●", text_color="gray", font=ctk.CTkFont(size=20))
+        self.openrouter_status = ctk.CTkLabel(self, text="●", text_color="gray", font=ctk.CTkFont(size=20))
+        self.ollama_status = ctk.CTkLabel(self, text="●", text_color="gray", font=ctk.CTkFont(size=20))
 
         # --- Gemini ---
         ctk.CTkLabel(self, text="Gemini API Key:").grid(row=0, column=0, padx=10, pady=10, sticky="w")
